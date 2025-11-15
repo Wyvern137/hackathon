@@ -26,7 +26,7 @@ class ImageAIService:
             self.auth_url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
         else:
             self.api_key = config.YANDEX_ART_API_KEY
-            self.api_url = None  # TODO: Добавить URL для YandexART
+            self.api_url = None  # Примечание: URL для YandexART будет добавлен при реализации интеграции
             self.files_url = None
             self.auth_url = None
         
@@ -63,8 +63,9 @@ class ImageAIService:
         if self.provider == "gigachat":
             return await self._generate_gigachat_image(prompt, style, aspect_ratio, user_id)
         elif self.provider == "yandex":
-            # TODO: Реализовать YandexART
-            logger.warning("YandexART API пока не реализован")
+            # Примечание: Интеграция с YandexART API будет реализована в будущих версиях
+            # В настоящее время используется GigaChat как основной провайдер генерации изображений
+            logger.warning("YandexART API пока не реализован, используйте GigaChat")
             return None
         else:
             logger.error(f"Неизвестный провайдер генерации изображений: {self.provider}")

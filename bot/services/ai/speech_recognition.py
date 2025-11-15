@@ -186,7 +186,7 @@ class SpeechRecognitionService:
                         "confidence": "low"
                     }
             
-            # Fallback: простой анализ по ключевым словам
+            # Резервный вариант: простой анализ по ключевым словам
             text_lower = text.lower()
             if any(word in text_lower for word in ["текст", "пост", "напиши", "создай текст", "сгенерируй текст"]):
                 return {"intent": "text_generation", "confidence": "medium"}

@@ -517,7 +517,7 @@ def setup_templates_handlers(application):
     
     application.add_handler(conv_handler)
     
-    # Callback handler для шаблонов
+    # Обработчик callback для шаблонов
     application.add_handler(
         CallbackQueryHandler(templates_callback, pattern="^templates_|^template_")
     )

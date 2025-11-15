@@ -1,3 +1,3 @@
-"""FSM states for conversation flows"""
+"""Состояния FSM для диалоговых потоков"""
 
 

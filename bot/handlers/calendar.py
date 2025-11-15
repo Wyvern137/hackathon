@@ -372,7 +372,7 @@ def setup_calendar_handlers(application):
     
     application.add_handler(conv_handler)
     
-    # Callback handler для календаря
+    # Обработчик callback для календаря
     application.add_handler(
         CallbackQueryHandler(calendar_callback, pattern="^calendar_")
     )

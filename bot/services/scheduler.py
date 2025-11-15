@@ -8,19 +8,35 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from bot.database.models import ContentPlan, NotificationSettings
 from bot.database.database import get_db
+from bot.config import config
 
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
+# Глобальная переменная для хранения bot экземпляра
+_bot_instance = None
+
+
+def set_bot_instance(bot):
+    """Устанавливает экземпляр бота для отправки напоминаний"""
+    global _bot_instance
+    _bot_instance = bot
+
 
 async def send_reminder(user_id: int, plan_id: int, message: str):
     """Отправляет напоминание пользователю"""
-    # Эта функция будет вызвана планировщиком
-    # Здесь должна быть логика отправки сообщения через Telegram Bot API
-    # Пока просто логируем
-    logger.info(f"Напоминание для пользователя {user_id}, план {plan_id}: {message}")
-    # TODO: Реализовать отправку через application.bot.send_message
+    try:
+        if _bot_instance:
+            await _bot_instance.send_message(
+                chat_id=user_id,
+                text=message
+            )
+            logger.info(f"Напоминание отправлено пользователю {user_id}, план {plan_id}")
+        else:
+            logger.warning(f"Bot экземпляр не установлен. Напоминание для пользователя {user_id}, план {plan_id}: {message}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке напоминания пользователю {user_id}: {e}")
 
 
 async def schedule_content_plan_reminders(plan: ContentPlan):

@@ -449,7 +449,7 @@ def setup_team_advanced_handlers(application):
     
     application.add_handler(conv_handler)
     
-    # Callback handlers
+    # Обработчики callback
     from telegram.ext import CallbackQueryHandler
     application.add_handler(
         CallbackQueryHandler(handle_team_callback, pattern="^team_")
