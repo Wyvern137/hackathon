@@ -49,7 +49,7 @@ class User(Base):
     """Модель пользователя Telegram"""
     __tablename__ = "users"
     
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # Telegram user_id
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # ID пользователя Telegram
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     first_name: Mapped[str] = mapped_column(String(255))
     last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -113,7 +113,7 @@ class NKOProfile(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     activity_types: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Список ActivityType
     target_audience: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    tone_of_voice: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # ToneOfVoice
+    tone_of_voice: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # Тон голоса
     contact_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Контакты
     brand_colors: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Цвета бренда для генерации изображений
     logo_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Путь к файлу логотипа
@@ -137,7 +137,7 @@ class ContentHistory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     
-    content_type: Mapped[str] = mapped_column(String(20))  # ContentType
+    content_type: Mapped[str] = mapped_column(String(20))  # Тип контента
     content_data: Mapped[dict] = mapped_column(JSON)  # Данные контента (текст, путь к изображению и т.д.)
     extra_data: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)  # Дополнительные данные
     
@@ -188,7 +188,7 @@ class PostTemplate(Base):
         Integer, 
         ForeignKey("users.id", ondelete="CASCADE"), 
         nullable=True
-    )  # null = общий шаблон
+    )  # null означает общий шаблон
     
     template_name: Mapped[str] = mapped_column(String(255))
     category: Mapped[str] = mapped_column(String(100))  # новости, анонс, отчет и т.д.
@@ -275,7 +275,7 @@ class TeamMember(Base):
     team_id: Mapped[int] = mapped_column(Integer, ForeignKey("teams.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     
-    role: Mapped[str] = mapped_column(String(20))  # TeamRole
+    role: Mapped[str] = mapped_column(String(20))  # Роль в команде
     permissions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Дополнительные права
     
     joined_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

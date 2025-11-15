@@ -42,7 +42,7 @@ class TeamMember(Base):
     team_id: Mapped[int] = mapped_column(Integer, ForeignKey("teams.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     
-    role: Mapped[str] = mapped_column(String(20))  # TeamRole
+    role: Mapped[str] = mapped_column(String(20))  # Роль в команде
     permissions: Mapped[dict] = mapped_column(JSON, nullable=True)  # Дополнительные права
     
     joined_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
