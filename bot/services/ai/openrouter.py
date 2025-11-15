@@ -81,7 +81,7 @@ class OpenRouterAPI:
         # Пробуем основную модель
         result = await self._make_request(payload, model)
         
-        # Если не получилось и включен fallback, пробуем резервные модели
+        # Если не получилось и включен резервный режим, пробуем резервные модели
         if result is None and use_fallback:
             for fallback_model in self.fallback_models:
                 if fallback_model == model:

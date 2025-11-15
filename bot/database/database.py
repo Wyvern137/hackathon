@@ -42,7 +42,7 @@ SessionLocal = sessionmaker(
     bind=engine
 )
 
-# Scoped session для использования в async контексте
+# Scoped сессия для использования в async контексте
 db_session = scoped_session(SessionLocal)
 
 
