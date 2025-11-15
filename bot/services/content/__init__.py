@@ -1,3 +1,2 @@
-"""Content processing services"""
-
+"""Сервисы обработки контента"""
 

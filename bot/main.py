@@ -152,6 +152,10 @@ async def run_bot():
         # Запускаем polling - бот будет работать до получения сигнала остановки
         async with application:
             await application.start()
+            # Устанавливаем экземпляр бота для планировщика напоминаний
+            from bot.services.scheduler import set_bot_instance
+            set_bot_instance(application.bot)
+            
             await application.updater.start_polling(
                 allowed_updates=Update.ALL_TYPES,
                 drop_pending_updates=True
