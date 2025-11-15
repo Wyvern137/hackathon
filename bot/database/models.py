@@ -229,3 +229,102 @@ class NotificationSettings(Base):
     def __repr__(self) -> str:
         return f"<NotificationSettings(id={self.id}, user_id={self.user_id}, enabled={self.reminder_enabled})>"
 
+
+class TeamRole(str, enum.Enum):
+    """Роли в команде"""
+    ADMIN = "admin"  # Администратор
+    EDITOR = "editor"  # Редактор
+    AUTHOR = "author"  # Автор
+    VIEWER = "viewer"  # Наблюдатель
+
+
+class Team(Base):
+    """Модель команды"""
+    __tablename__ = "teams"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Связи
+    members: Mapped[list["TeamMember"]] = relationship(
+        "TeamMember", 
+        back_populates="team", 
+        cascade="all, delete-orphan"
+    )
+    shared_content: Mapped[list["SharedContent"]] = relationship(
+        "SharedContent", 
+        back_populates="team", 
+        cascade="all, delete-orphan"
+    )
+    
+    def __repr__(self) -> str:
+        return f"<Team(id={self.id}, name={self.name}, owner_id={self.owner_id})>"
+
+
+class TeamMember(Base):
+    """Участник команды"""
+    __tablename__ = "team_members"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(Integer, ForeignKey("teams.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    
+    role: Mapped[str] = mapped_column(String(20))  # TeamRole
+    permissions: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Дополнительные права
+    
+    joined_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    
+    # Связи
+    team: Mapped["Team"] = relationship("Team", back_populates="members")
+    
+    def __repr__(self) -> str:
+        return f"<TeamMember(id={self.id}, team_id={self.team_id}, user_id={self.user_id}, role={self.role})>"
+
+
+class SharedContent(Base):
+    """Общий контент команды"""
+    __tablename__ = "shared_content"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    team_id: Mapped[int] = mapped_column(Integer, ForeignKey("teams.id", ondelete="CASCADE"))
+    content_history_id: Mapped[int] = mapped_column(Integer, ForeignKey("content_history.id", ondelete="CASCADE"))
+    
+    shared_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    approved_by: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    comments: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Комментарии к контенту
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    
+    # Связи
+    team: Mapped["Team"] = relationship("Team", back_populates="shared_content")
+    
+    def __repr__(self) -> str:
+        return f"<SharedContent(id={self.id}, team_id={self.team_id}, content_history_id={self.content_history_id}, is_approved={self.is_approved})>"
+
+
+class ContentComment(Base):
+    """Комментарии к контенту"""
+    __tablename__ = "content_comments"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    shared_content_id: Mapped[int] = mapped_column(Integer, ForeignKey("shared_content.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    
+    comment_text: Mapped[str] = mapped_column(Text)
+    is_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    
+    def __repr__(self) -> str:
+        return f"<ContentComment(id={self.id}, shared_content_id={self.shared_content_id}, user_id={self.user_id})>"
+

@@ -13,35 +13,9 @@ logger = logging.getLogger(__name__)
 
 async def show_team_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показывает меню командной работы"""
-    user_id = update.effective_user.id
-    get_or_create_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
-    
-    text = (
-        "👥 **Командная работа**\n\n"
-        "Эта функция позволяет нескольким членам команды НКО работать с ботом совместно.\n\n"
-        "**Текущий статус:**\n"
-        "• Режим: Индивидуальный\n"
-        "• Команда: Не настроена\n\n"
-        "**Доступные функции:**\n"
-        "• Общий доступ к контенту\n"
-        "• Комментарии к постам\n"
-        "• Утверждение контента\n\n"
-        "⚠️ Полная функциональность командной работы будет доступна в следующих версиях.\n\n"
-        "Сейчас все участники могут использовать бот индивидуально, "
-        "а контент сохраняется в личной истории каждого пользователя."
-    )
-    
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("📋 Мои посты", callback_data="team_my_posts"),
-            InlineKeyboardButton("💬 Комментарии", callback_data="team_comments")
-        ],
-        [
-            InlineKeyboardButton("◀️ Назад", callback_data="main_menu")
-        ]
-    ])
-    
-    await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    # Используем расширенное меню
+    from bot.handlers.team_advanced import show_team_advanced_menu
+    await show_team_advanced_menu(update, context)
 
 
 async def team_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,4 +73,5 @@ def setup_team_handlers(application):
     application.add_handler(
         CallbackQueryHandler(team_callback, pattern="^team_")
     )
+
 

@@ -10,6 +10,8 @@ from telegram.ext import ContextTypes
 from bot.utils.helpers import get_or_create_user
 from bot.database.models import ContentHistory, ContentPlan, PostTemplate
 from bot.database.database import get_db
+from bot.services.analytics.predictions import prediction_service
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 try:
     import matplotlib
@@ -160,7 +162,22 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif texts_month == 0 and total_texts > 0:
         text += "💡 Совет: За последний месяц нет активности. Время вернуться к созданию контента!"
     
-    await update.message.reply_text(text, parse_mode="Markdown")
+    # Кнопки дополнительной аналитики
+    analytics_keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📈 График активности", callback_data="analytics_chart"),
+            InlineKeyboardButton("📊 Анализ популярности", callback_data="analytics_popularity")
+        ],
+        [
+            InlineKeyboardButton("💡 Рекомендации", callback_data="analytics_recommendations"),
+            InlineKeyboardButton("🔮 Прогноз эффективности", callback_data="analytics_predictions")
+        ],
+        [
+            InlineKeyboardButton("⏰ Рекомендации по времени", callback_data="analytics_posting_time")
+        ]
+    ])
+    
+    await update.message.reply_text(text, reply_markup=analytics_keyboard, parse_mode="Markdown")
 
 
 def get_detailed_statistics(user_id: int, period_days: int = 30) -> Dict[str, Any]:
@@ -427,7 +444,228 @@ def generate_recommendations(user_id: int) -> List[str]:
         return ["Не удалось сгенерировать рекомендации"]
 
 
+async def handle_analytics_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка callback для аналитики"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    callback_data = query.data
+    
+    if callback_data == "analytics_chart":
+        await query.edit_message_text("⏳ Генерирую график активности...")
+        
+        chart_path = await generate_activity_chart(user_id, period_days=30)
+        
+        if chart_path and chart_path.exists():
+            with open(chart_path, 'rb') as f:
+                await query.message.reply_photo(
+                    photo=f,
+                    caption="📈 График активности за последние 30 дней"
+                )
+            await query.edit_message_text("✅ График создан!")
+        else:
+            await query.edit_message_text(
+                "❌ Не удалось создать график. Возможно, недостаточно данных или библиотека matplotlib не установлена."
+            )
+    
+    elif callback_data == "analytics_popularity":
+        await query.edit_message_text("⏳ Анализирую популярность контента...")
+        
+        analysis = await analyze_content_popularity(user_id, content_type="text", limit=50)
+        
+        if analysis.get("success"):
+            metrics = analysis.get("metrics", {})
+            text = "📊 **Анализ популярности контента**\n\n"
+            
+            # Популярные хештеги
+            hashtags = metrics.get("most_used_hashtags", {})
+            if hashtags:
+                text += "**Топ хештегов:**\n"
+                for i, (tag, count) in enumerate(list(hashtags.items())[:10], 1):
+                    text += f"{i}. #{tag}: {count} раз\n"
+                text += "\n"
+            
+            # Популярные стили
+            styles = metrics.get("most_common_styles", {})
+            if styles:
+                text += "**Используемые стили:**\n"
+                for style, count in sorted(styles.items(), key=lambda x: x[1], reverse=True):
+                    style_names = {
+                        "conversational": "Разговорный",
+                        "formal": "Официальный",
+                        "artistic": "Художественный",
+                        "neutral": "Нейтральный",
+                        "friendly": "Дружелюбный"
+                    }
+                    style_name = style_names.get(style, style)
+                    text += f"• {style_name}: {count} раз\n"
+                text += "\n"
+            
+            # Средняя длина
+            avg_length = metrics.get("average_length", 0)
+            total_hashtags = metrics.get("total_hashtags", 0)
+            items_count = analysis.get("items_analyzed", 0)
+            
+            text += f"**Статистика:**\n"
+            text += f"• Проанализировано постов: {items_count}\n"
+            text += f"• Средняя длина текста: {avg_length:.0f} символов\n"
+            text += f"• Всего хештегов использовано: {total_hashtags}\n"
+            
+            await query.edit_message_text(text, parse_mode="Markdown")
+        else:
+            await query.edit_message_text(
+                f"❌ Ошибка при анализе: {analysis.get('error', 'Неизвестная ошибка')}"
+            )
+    
+    elif callback_data == "analytics_recommendations":
+        await query.edit_message_text("⏳ Генерирую рекомендации...")
+        
+        recommendations = generate_recommendations(user_id)
+        
+        if recommendations:
+            text = "💡 **Персональные рекомендации**\n\n"
+            for rec in recommendations:
+                text += f"{rec}\n"
+            
+            await query.edit_message_text(text, parse_mode="Markdown")
+        else:
+            await query.edit_message_text("❌ Не удалось сгенерировать рекомендации.")
+    
+    elif callback_data == "analytics_predictions":
+        await query.edit_message_text("⏳ Анализирую и прогнозирую эффективность...")
+        
+        # Получаем последний пост для прогноза
+        with get_db() as db:
+            last_post = db.query(ContentHistory).filter(
+                ContentHistory.user_id == user_id,
+                ContentHistory.content_type == "text"
+            ).order_by(ContentHistory.generated_at.desc()).first()
+        
+        if last_post:
+            content_data = last_post.content_data if isinstance(last_post.content_data, dict) else {}
+            text = content_data.get("text", "")
+            hashtags = content_data.get("hashtags", [])
+            style = content_data.get("style", "нейтральный")
+            
+            prediction = await prediction_service.predict_reach(user_id, text, hashtags, style)
+            
+            if prediction.get("success"):
+                reach_emoji = {
+                    "высокий": "🔥",
+                    "средний": "📊",
+                    "низкий": "📉"
+                }
+                emoji = reach_emoji.get(prediction["predicted_reach"], "📊")
+                
+                text_response = (
+                    f"{emoji} **Прогноз эффективности**\n\n"
+                    f"**Потенциальный охват:** {prediction['predicted_reach']}\n"
+                    f"**Уверенность:** {prediction['confidence']}\n\n"
+                )
+                
+                if prediction.get("recommendations"):
+                    text_response += f"**Рекомендации:**\n{prediction['recommendations']}\n\n"
+                
+                if prediction.get("metrics"):
+                    metrics = prediction["metrics"]
+                    text_response += (
+                        f"**Метрики:**\n"
+                        f"• Длина текста: {metrics['text_length']} символов\n"
+                        f"• Хештегов: {metrics['hashtags_count']}\n"
+                        f"• Стиль: {metrics['style']}\n"
+                    )
+                
+                await query.edit_message_text(text_response, parse_mode="Markdown")
+            else:
+                await query.edit_message_text(
+                    f"❌ Ошибка при прогнозировании: {prediction.get('error', 'Неизвестная ошибка')}"
+                )
+        else:
+            await query.edit_message_text(
+                "❌ Не найдено постов для анализа. Создай хотя бы один пост!"
+            )
+    
+    elif callback_data == "analytics_posting_time":
+        await query.edit_message_text("⏳ Анализирую лучшее время для публикаций...")
+        
+        recommendation = await prediction_service.recommend_posting_time(user_id)
+        
+        if recommendation.get("success"):
+            times = recommendation.get("recommended_times", [])
+            text = "⏰ **Рекомендации по времени публикаций**\n\n"
+            text += "**Лучшее время для публикаций:**\n"
+            for i, time_str in enumerate(times, 1):
+                text += f"{i}. {time_str}\n"
+            
+            if recommendation.get("analysis"):
+                analysis = recommendation["analysis"]
+                if analysis.get("most_active_hour") is not None:
+                    text += f"\n**Анализ:**\n"
+                    text += f"• Самый активный час: {analysis['most_active_hour']}:00\n"
+            
+            text += "\n💡 *Совет:* Публикуй контент в эти часы для максимального охвата!"
+            
+            await query.edit_message_text(text, parse_mode="Markdown")
+        else:
+            await query.edit_message_text(
+                f"❌ Ошибка: {recommendation.get('error', 'Неизвестная ошибка')}"
+            )
+
+
 def setup_analytics_handlers(application):
     """Настройка обработчиков аналитики"""
-    pass
+    from telegram.ext import CallbackQueryHandler
+    application.add_handler(
+        CallbackQueryHandler(handle_analytics_callback, pattern="^analytics_")
+    )
+    
+    # Обработчик для прогнозирования охвата поста
+    async def handle_post_prediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка запроса прогноза для готового поста"""
+        query = update.callback_query
+        if not query:
+            return
+        
+        await query.answer()
+        
+        if query.data == "predict_reach":
+            user_id = update.effective_user.id
+            last_text = context.user_data.get('last_generated_text', '')
+            last_data = context.user_data.get('last_text_data', {})
+            
+            if not last_text:
+                await query.answer("Пост не найден", show_alert=True)
+                return
+            
+            await query.edit_message_text("⏳ Прогнозирую охват поста...")
+            
+            text = last_data.get("text", last_text)
+            hashtags = last_data.get("hashtags", [])
+            style = context.user_data.get('style', 'нейтральный')
+            
+            prediction = await prediction_service.predict_reach(user_id, text, hashtags, style)
+            
+            if prediction.get("success"):
+                reach_emoji = {
+                    "высокий": "🔥",
+                    "средний": "📊",
+                    "низкий": "📉"
+                }
+                emoji = reach_emoji.get(prediction["predicted_reach"], "📊")
+                
+                text_response = (
+                    f"{emoji} **Прогноз охвата**\n\n"
+                    f"**Потенциальный охват:** {prediction['predicted_reach']}\n"
+                    f"**Уверенность:** {prediction['confidence']}\n"
+                )
+                
+                if prediction.get("recommendations"):
+                    text_response += f"\n**Рекомендации:**\n{prediction['recommendations']}"
+                
+                await query.edit_message_text(text_response, parse_mode="Markdown")
+    
+    application.add_handler(
+        CallbackQueryHandler(handle_post_prediction, pattern="^predict_reach$")
+    )
 

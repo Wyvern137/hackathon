@@ -40,7 +40,7 @@ def get_style_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
-def get_post_actions_keyboard() -> InlineKeyboardMarkup:
+def get_post_actions_keyboard(show_platform_optimize: bool = True) -> InlineKeyboardMarkup:
     """Клавиатура действий с готовым постом"""
     keyboard = [
         [
@@ -50,11 +50,19 @@ def get_post_actions_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton("🔄 Перегенерировать", callback_data="regenerate_post"),
             InlineKeyboardButton("📝 В редактор", callback_data="to_editor")
-        ],
-        [
-            InlineKeyboardButton("◀️ Назад", callback_data="main_menu")
         ]
     ]
+    
+    if show_platform_optimize:
+        keyboard.append([
+            InlineKeyboardButton("📱 Оптимизировать под платформу", callback_data="optimize_platform"),
+            InlineKeyboardButton("🔮 Прогноз охвата", callback_data="predict_reach")
+        ])
+    
+    keyboard.append([
+        InlineKeyboardButton("◀️ Назад", callback_data="main_menu")
+    ])
+    
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -93,8 +101,56 @@ def get_image_aspect_ratio_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def get_image_platform_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора платформы для адаптации изображения"""
+    keyboard = [
+        [
+            InlineKeyboardButton("📱 Instagram", callback_data="platform_instagram"),
+            InlineKeyboardButton("📸 Instagram Story", callback_data="platform_instagram_story")
+        ],
+        [
+            InlineKeyboardButton("👥 ВКонтакте", callback_data="platform_vk"),
+            InlineKeyboardButton("✈️ Telegram", callback_data="platform_telegram")
+        ],
+        [
+            InlineKeyboardButton("📘 Facebook", callback_data="platform_facebook"),
+            InlineKeyboardButton("⏭️ Пропустить", callback_data="skip_platform")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_image_post_processing_keyboard(has_logo: bool = False) -> InlineKeyboardMarkup:
+    """Клавиатура действий с готовым изображением после генерации"""
+    keyboard = []
+    
+    # Опции обработки
+    processing_row = [
+        InlineKeyboardButton("📐 Адаптировать размер", callback_data="image_adapt_size"),
+    ]
+    if has_logo:
+        processing_row.append(InlineKeyboardButton("🏷️ Добавить логотип", callback_data="image_add_logo"))
+    keyboard.append(processing_row)
+    
+    # Основные действия
+    keyboard.extend([
+        [
+            InlineKeyboardButton("💾 Сохранить", callback_data="save_image"),
+            InlineKeyboardButton("🔄 Перегенерировать", callback_data="regenerate_image")
+        ],
+        [
+            InlineKeyboardButton("📝 Создать обложку", callback_data="image_create_cover"),
+            InlineKeyboardButton("🖼️ Создать коллаж", callback_data="image_create_collage")
+        ],
+        [
+            InlineKeyboardButton("◀️ Главное меню", callback_data="main_menu")
+        ]
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
 def get_image_actions_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура действий с готовым изображением"""
+    """Клавиатура действий с готовым изображением (старая версия, для совместимости)"""
     keyboard = [
         [
             InlineKeyboardButton("💾 Сохранить", callback_data="save_image"),
@@ -314,7 +370,12 @@ def get_nko_template_keyboard() -> InlineKeyboardMarkup:
         keyboard.append(row)
     
     keyboard.append([
-        InlineKeyboardButton("⏭️ Заполнить вручную", callback_data="nko_setup_manual"),
+        InlineKeyboardButton("⏭️ Заполнить вручную", callback_data="nko_setup_manual")
+    ])
+    keyboard.append([
+        InlineKeyboardButton("🔍 Импорт по ИНН/ОГРН", callback_data="nko_setup_import")
+    ])
+    keyboard.append([
         InlineKeyboardButton("◀️ Назад", callback_data="nko_setup_start")
     ])
     

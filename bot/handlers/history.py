@@ -8,7 +8,13 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.utils.helpers import get_or_create_user
 from bot.database.models import ContentHistory
 from bot.database.database import get_db
-from bot.utils.export import export_history_to_txt, export_texts_to_csv
+from bot.utils.export import (
+    export_history_to_txt, 
+    export_texts_to_csv,
+    export_to_docx,
+    export_to_pdf,
+    create_images_archive
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +60,15 @@ async def show_history_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Кнопки экспорта
     export_keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📥 Экспорт TXT", callback_data="export_history_txt"),
-            InlineKeyboardButton("📊 Экспорт CSV", callback_data="export_history_csv")
+            InlineKeyboardButton("📥 TXT", callback_data="export_history_txt"),
+            InlineKeyboardButton("📊 CSV", callback_data="export_history_csv")
+        ],
+        [
+            InlineKeyboardButton("📄 DOCX", callback_data="export_history_docx"),
+            InlineKeyboardButton("📑 PDF", callback_data="export_history_pdf")
+        ],
+        [
+            InlineKeyboardButton("🖼️ Архив изображений", callback_data="export_images_zip")
         ]
     ])
     
@@ -101,6 +114,54 @@ async def handle_export_callback(update: Update, context: ContextTypes.DEFAULT_T
             await query.edit_message_text("✅ Экспорт завершен!")
         else:
             await query.edit_message_text("❌ Ошибка при экспорте. Попробуй еще раз.")
+    
+    elif callback_data == "export_history_docx":
+        await query.edit_message_text("⏳ Экспортирую тексты в DOCX...")
+        
+        file_path = await export_to_docx(user_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ Тексты экспортированы в DOCX файл"
+                )
+            await query.edit_message_text("✅ Экспорт завершен!")
+        else:
+            await query.edit_message_text("❌ Ошибка при экспорте или библиотека python-docx не установлена.")
+    
+    elif callback_data == "export_history_pdf":
+        await query.edit_message_text("⏳ Экспортирую тексты в PDF...")
+        
+        file_path = await export_to_pdf(user_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ Тексты экспортированы в PDF файл"
+                )
+            await query.edit_message_text("✅ Экспорт завершен!")
+        else:
+            await query.edit_message_text("❌ Ошибка при экспорте или библиотека reportlab не установлена.")
+    
+    elif callback_data == "export_images_zip":
+        await query.edit_message_text("⏳ Создаю архив изображений...")
+        
+        file_path = await create_images_archive(user_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ Архив изображений создан"
+                )
+            await query.edit_message_text("✅ Архив создан!")
+        else:
+            await query.edit_message_text("❌ Ошибка при создании архива или нет изображений для экспорта.")
 
 
 def setup_history_handlers(application):
@@ -108,6 +169,6 @@ def setup_history_handlers(application):
     from telegram.ext import CallbackQueryHandler
     # Callback для экспорта
     application.add_handler(
-        CallbackQueryHandler(handle_export_callback, pattern="^export_history_")
+        CallbackQueryHandler(handle_export_callback, pattern="^(export_history_|export_images_)")
     )
 

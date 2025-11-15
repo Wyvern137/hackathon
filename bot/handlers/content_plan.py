@@ -14,6 +14,9 @@ from bot.services.ai.openrouter import openrouter_api
 from bot.utils.helpers import get_or_create_user, calculate_content_plan_dates
 from bot.utils.holidays import get_relevant_dates
 from bot.utils.template_loader import get_content_plan_template_by_category
+from bot.utils.export import export_plan_to_excel, export_to_ical, export_content_plan_to_csv
+from bot.services.content.smart_planning import smart_planning_service
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.database.models import ContentPlan, ContentHistory, NKOProfile
 from bot.database.database import get_db
 from bot.states.conversation import END
@@ -193,6 +196,13 @@ async def handle_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         period_days, frequency, days
     )
     
+    # Анализируем лучшее время для публикаций
+    time_analysis = await smart_planning_service.analyze_best_posting_times(user_id)
+    if time_analysis.get("success") and time_analysis.get("recommended_times"):
+        recommended_time = time_analysis["recommended_times"][0]
+        if not time_str or time_str.lower() in ["утро", "день", "вечер"]:
+            time_str = recommended_time
+    
     # Отправляем сообщение о генерации
     processing_msg = await update.message.reply_text("⏳ Генерирую контент-план...")
     
@@ -307,8 +317,24 @@ async def handle_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if len(plan_content) > 3000:
                 response_text += "\n\n... (план обрезан, полная версия сохранена)"
             
+            # Кнопки экспорта и дополнительных функций
+            export_keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("📊 CSV", callback_data=f"export_plan_csv_{content_plan.id}"),
+                    InlineKeyboardButton("📈 Excel", callback_data=f"export_plan_excel_{content_plan.id}")
+                ],
+                [
+                    InlineKeyboardButton("📅 iCal", callback_data=f"export_plan_ical_{content_plan.id}")
+                ],
+                [
+                    InlineKeyboardButton("🤖 Автогенерация постов", callback_data=f"plan_auto_generate_{content_plan.id}"),
+                    InlineKeyboardButton("📊 Анализ эффективности", callback_data=f"plan_analyze_{content_plan.id}")
+                ]
+            ])
+            
             await processing_msg.edit_text(
                 response_text,
+                reply_markup=export_keyboard,
                 parse_mode="Markdown"
             )
         else:
@@ -338,6 +364,137 @@ async def cancel_content_plan(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=get_main_menu_keyboard()
     )
     return END
+
+
+async def handle_plan_export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка экспорта контент-плана и дополнительных функций"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    callback_data = query.data
+    
+    # Обработка автогенерации
+    if callback_data.startswith("plan_auto_generate_"):
+        plan_id = int(callback_data.replace("plan_auto_generate_", ""))
+        await query.edit_message_text("⏳ Автоматически генерирую посты для всех дат в плане...\n\nЭто может занять некоторое время.")
+        
+        # Получаем профиль НКО
+        nko_profile = None
+        with get_db() as db:
+            profile = db.query(NKOProfile).filter(NKOProfile.user_id == user_id).first()
+            if profile:
+                nko_profile = {
+                    "organization_name": profile.organization_name,
+                    "description": profile.description
+                }
+        
+        result = await smart_planning_service.auto_generate_plan_content(plan_id, user_id, nko_profile)
+        
+        if result.get("success"):
+            generated_count = result.get("generated_count", 0)
+            total_count = result.get("total_count", 0)
+            await query.edit_message_text(
+                f"✅ Автогенерация завершена!\n\n"
+                f"Сгенерировано постов: {generated_count} из {total_count}\n\n"
+                f"Все посты сохранены в истории контента."
+            )
+        else:
+            await query.edit_message_text(
+                f"❌ Ошибка при автогенерации: {result.get('error', 'Неизвестная ошибка')}"
+            )
+        return
+    
+    # Обработка анализа эффективности
+    if callback_data.startswith("plan_analyze_"):
+        plan_id = int(callback_data.replace("plan_analyze_", ""))
+        await query.edit_message_text("⏳ Анализирую эффективность плана...")
+        
+        analysis = await smart_planning_service.analyze_plan_effectiveness(plan_id, user_id)
+        
+        if analysis.get("success"):
+            text = (
+                f"📊 **Анализ эффективности плана**\n\n"
+                f"**Выполнение:**\n"
+                f"• Всего постов: {analysis['total_posts']}\n"
+                f"• Выполнено: {analysis['completed_posts']}\n"
+                f"• Осталось: {analysis['remaining_posts']}\n"
+                f"• Процент выполнения: {analysis['completion_percentage']}%\n\n"
+            )
+            
+            if analysis.get("content_diversity"):
+                diversity = analysis["content_diversity"]
+                text += f"**Разнообразие контента:**\n"
+                text += f"• Типов контента: {diversity['types_count']}\n"
+                if diversity.get("types_distribution"):
+                    text += "• Распределение:\n"
+                    for ctype, count in diversity["types_distribution"].items():
+                        text += f"  - {ctype}: {count}\n"
+                text += "\n"
+            
+            if analysis.get("recommendations"):
+                text += "**Рекомендации:**\n"
+                for rec in analysis["recommendations"]:
+                    text += f"{rec}\n"
+            
+            await query.edit_message_text(text, parse_mode="Markdown")
+        else:
+            await query.edit_message_text(
+                f"❌ Ошибка при анализе: {analysis.get('error', 'Неизвестная ошибка')}"
+            )
+        return
+    
+    # Парсим callback_data: export_plan_csv_123, export_plan_excel_123, export_plan_ical_123
+    if callback_data.startswith("export_plan_csv_"):
+        plan_id = int(callback_data.replace("export_plan_csv_", ""))
+        await query.edit_message_text("⏳ Экспортирую контент-план в CSV...")
+        
+        file_path = await export_content_plan_to_csv(user_id, plan_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ Контент-план экспортирован в CSV файл"
+                )
+            await query.edit_message_text("✅ Экспорт завершен!")
+        else:
+            await query.edit_message_text("❌ Ошибка при экспорте. Попробуй еще раз.")
+    
+    elif callback_data.startswith("export_plan_excel_"):
+        plan_id = int(callback_data.replace("export_plan_excel_", ""))
+        await query.edit_message_text("⏳ Экспортирую контент-план в Excel...")
+        
+        file_path = await export_plan_to_excel(user_id, plan_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ Контент-план экспортирован в Excel файл"
+                )
+            await query.edit_message_text("✅ Экспорт завершен!")
+        else:
+            await query.edit_message_text("❌ Ошибка при экспорте или библиотека openpyxl не установлена.")
+    
+    elif callback_data.startswith("export_plan_ical_"):
+        plan_id = int(callback_data.replace("export_plan_ical_", ""))
+        await query.edit_message_text("⏳ Экспортирую контент-план в iCal...")
+        
+        file_path = await export_to_ical(user_id, plan_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ Контент-план экспортирован в iCal файл"
+                )
+            await query.edit_message_text("✅ Экспорт завершен!")
+        else:
+            await query.edit_message_text("❌ Ошибка при экспорте или библиотека icalendar не установлена.")
 
 
 def setup_content_plan_handlers(application):
@@ -372,6 +529,12 @@ def setup_content_plan_handlers(application):
     )
     
     application.add_handler(conv_handler)
+    
+    # Обработчик экспорта контент-плана
+    from telegram.ext import CallbackQueryHandler
+    application.add_handler(
+        CallbackQueryHandler(handle_plan_export_callback, pattern="^export_plan_")
+    )
 
 
 async def auto_generate_plan_texts(plan_id: int, user_id: int) -> Dict[str, Any]:

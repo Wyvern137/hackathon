@@ -1,10 +1,10 @@
 """
-Сервис для обработки изображений (коллажи, добавление логотипа, адаптация размеров)
+Сервис для обработки и редактирования изображений
 """
 import logging
+from typing import Optional, List, Tuple
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 import io
 
 logger = logging.getLogger(__name__)
@@ -13,162 +13,84 @@ logger = logging.getLogger(__name__)
 class ImageProcessingService:
     """Сервис для обработки изображений"""
     
-    # Размеры изображений для разных платформ
-    PLATFORM_SIZES = {
-        "instagram": (1080, 1080),  # Квадратный пост
-        "instagram_story": (1080, 1920),  # Stories
-        "vk": (1200, 630),  # Обложка поста ВКонтакте
-        "telegram": (1024, 1024),  # Telegram
-        "facebook": (1200, 630),  # Facebook
-    }
-    
     def __init__(self):
-        """Инициализация сервиса"""
-        pass
+        self.supported_formats = ['PNG', 'JPEG', 'JPG', 'WEBP']
     
-    def resize_for_platform(
+    async def add_text_to_image(
         self,
         image_path: Path,
-        platform: str,
-        output_path: Optional[Path] = None
+        text: str,
+        position: Tuple[int, int] = (10, 10),
+        font_size: int = 24,
+        text_color: Tuple[int, int, int] = (255, 255, 255),
+        background_color: Optional[Tuple[int, int, int]] = None
     ) -> Optional[Path]:
         """
-        Адаптирует изображение под размеры для платформы
+        Добавляет текст на изображение
         
         Args:
             image_path: Путь к исходному изображению
-            platform: Платформа (instagram, instagram_story, vk, telegram, facebook)
-            output_path: Путь для сохранения (если None, перезаписывает исходный)
+            text: Текст для добавления
+            position: Позиция текста (x, y)
+            font_size: Размер шрифта
+            text_color: Цвет текста (R, G, B)
+            background_color: Цвет фона текста (опционально)
         
         Returns:
-            Путь к адаптированному изображению или None
+            Путь к обработанному изображению или None
         """
         try:
-            size = self.PLATFORM_SIZES.get(platform.lower())
-            if not size:
-                logger.warning(f"Неизвестная платформа: {platform}")
-                return None
+            # Открываем изображение
+            img = Image.open(image_path)
             
-            image = Image.open(image_path)
-            original_size = image.size
+            # Создаем объект для рисования
+            draw = ImageDraw.Draw(img)
             
-            # Изменяем размер с сохранением пропорций
-            image.thumbnail(size, Image.Resampling.LANCZOS)
-            
-            # Создаем новое изображение нужного размера с белым фоном
-            new_image = Image.new('RGB', size, (255, 255, 255))
-            
-            # Центрируем изображение
-            paste_x = (size[0] - image.size[0]) // 2
-            paste_y = (size[1] - image.size[1]) // 2
-            new_image.paste(image, (paste_x, paste_y))
-            
-            output = output_path or image_path
-            new_image.save(output, quality=95)
-            
-            logger.info(f"Изображение адаптировано под {platform}: {original_size} -> {size}")
-            return output
-        
-        except Exception as e:
-            logger.error(f"Ошибка при адаптации изображения: {e}")
-            return None
-    
-    def create_collage(
-        self,
-        image_paths: List[Path],
-        layout: str = "2x2",
-        output_path: Optional[Path] = None
-    ) -> Optional[Path]:
-        """
-        Создает коллаж из нескольких изображений
-        
-        Args:
-            image_paths: Список путей к изображениям
-            layout: Макет коллажа (1x2, 2x1, 2x2, 1x3, 3x1)
-            output_path: Путь для сохранения
-        
-        Returns:
-            Путь к созданному коллажу или None
-        """
-        try:
-            if not image_paths:
-                logger.warning("Нет изображений для создания коллажа")
-                return None
-            
-            # Парсим layout
-            rows, cols = map(int, layout.split('x'))
-            max_images = rows * cols
-            image_paths = image_paths[:max_images]
-            
-            # Загружаем изображения
-            images = []
-            for path in image_paths:
+            # Пытаемся загрузить шрифт
+            try:
+                font = ImageFont.truetype("arial.ttf", font_size)
+            except:
                 try:
-                    img = Image.open(path)
-                    img = img.convert('RGB')
-                    images.append(img)
-                except Exception as e:
-                    logger.error(f"Ошибка при загрузке изображения {path}: {e}")
-                    continue
+                    font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
+                except:
+                    font = ImageFont.load_default()
             
-            if not images:
-                logger.warning("Не удалось загрузить ни одного изображения")
-                return None
+            # Если нужен фон для текста
+            if background_color:
+                # Получаем размеры текста
+                bbox = draw.textbbox(position, text, font=font)
+                padding = 5
+                draw.rectangle(
+                    [
+                        bbox[0] - padding,
+                        bbox[1] - padding,
+                        bbox[2] + padding,
+                        bbox[3] + padding
+                    ],
+                    fill=background_color
+                )
             
-            # Определяем размер каждого изображения в коллаже
-            target_size = 512  # Размер каждой ячейки
-            cell_width = target_size
-            cell_height = target_size
+            # Рисуем текст
+            draw.text(position, text, fill=text_color, font=font)
             
-            # Размер итогового изображения
-            collage_width = cell_width * cols
-            collage_height = cell_height * rows
+            # Сохраняем
+            output_path = image_path.parent / f"{image_path.stem}_with_text{image_path.suffix}"
+            img.save(output_path)
             
-            # Создаем новое изображение
-            collage = Image.new('RGB', (collage_width, collage_height), (255, 255, 255))
-            
-            # Размещаем изображения
-            for i, img in enumerate(images):
-                if i >= max_images:
-                    break
-                
-                row = i // cols
-                col = i % cols
-                
-                # Изменяем размер изображения под ячейку
-                img_resized = img.copy()
-                img_resized.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
-                
-                # Центрируем в ячейке
-                x = col * cell_width + (cell_width - img_resized.width) // 2
-                y = row * cell_height + (cell_height - img_resized.height) // 2
-                
-                # Вставляем изображение
-                if img_resized.mode == 'RGBA':
-                    collage.paste(img_resized, (x, y), img_resized)
-                else:
-                    collage.paste(img_resized, (x, y))
-            
-            # Сохраняем коллаж
-            if output_path is None:
-                from datetime import datetime
-                output_path = Path(image_paths[0].parent) / f"collage_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            
-            collage.save(output_path, quality=95)
-            logger.info(f"Коллаж создан: {output_path}")
+            logger.info(f"Текст добавлен на изображение: {output_path}")
             return output_path
         
         except Exception as e:
-            logger.error(f"Ошибка при создании коллажа: {e}")
+            logger.exception(f"Ошибка при добавлении текста на изображение: {e}")
             return None
     
-    def add_logo_to_image(
+    async def add_logo(
         self,
         image_path: Path,
         logo_path: Path,
         position: str = "bottom_right",
-        size: Optional[Tuple[int, int]] = None,
-        output_path: Optional[Path] = None
+        size: Tuple[int, int] = (100, 100),
+        opacity: float = 1.0
     ) -> Optional[Path]:
         """
         Добавляет логотип на изображение
@@ -177,160 +99,199 @@ class ImageProcessingService:
             image_path: Путь к исходному изображению
             logo_path: Путь к логотипу
             position: Позиция логотипа (top_left, top_right, bottom_left, bottom_right, center)
-            size: Размер логотипа (ширина, высота) или None для автоматического
-            output_path: Путь для сохранения
+            size: Размер логотипа (width, height)
+            opacity: Прозрачность (0.0 - 1.0)
         
         Returns:
-            Путь к изображению с логотипом или None
+            Путь к обработанному изображению или None
         """
         try:
-            image = Image.open(image_path)
+            # Открываем изображения
+            img = Image.open(image_path)
             logo = Image.open(logo_path)
             
-            # Конвертируем в RGB если нужно
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
+            # Изменяем размер логотипа
+            logo = logo.resize(size, Image.Resampling.LANCZOS)
             
-            # Определяем размер логотипа
-            if size:
-                logo.thumbnail(size, Image.Resampling.LANCZOS)
-            else:
-                # Автоматический размер - 10% от ширины изображения
-                logo_width = int(image.width * 0.1)
-                logo.thumbnail((logo_width, logo_width), Image.Resampling.LANCZOS)
+            # Применяем прозрачность
+            if opacity < 1.0:
+                logo = logo.convert("RGBA")
+                alpha = logo.split()[3]
+                alpha = alpha.point(lambda p: int(p * opacity))
+                logo.putalpha(alpha)
             
             # Определяем позицию
-            margin = 20
+            img_width, img_height = img.size
+            logo_width, logo_height = logo.size
+            
             positions = {
-                "top_left": (margin, margin),
-                "top_right": (image.width - logo.width - margin, margin),
-                "bottom_left": (margin, image.height - logo.height - margin),
-                "bottom_right": (image.width - logo.width - margin, image.height - logo.height - margin),
-                "center": ((image.width - logo.width) // 2, (image.height - logo.height) // 2)
+                "top_left": (10, 10),
+                "top_right": (img_width - logo_width - 10, 10),
+                "bottom_left": (10, img_height - logo_height - 10),
+                "bottom_right": (img_width - logo_width - 10, img_height - logo_height - 10),
+                "center": ((img_width - logo_width) // 2, (img_height - logo_height) // 2)
             }
             
-            pos = positions.get(position.lower(), positions["bottom_right"])
+            pos = positions.get(position, positions["bottom_right"])
             
             # Вставляем логотип
-            if logo.mode == 'RGBA':
-                image.paste(logo, pos, logo)
+            if logo.mode == "RGBA":
+                img.paste(logo, pos, logo)
             else:
-                image.paste(logo, pos)
+                img.paste(logo, pos)
             
-            output = output_path or image_path
-            image.save(output, quality=95)
+            # Сохраняем
+            output_path = image_path.parent / f"{image_path.stem}_with_logo{image_path.suffix}"
+            img.save(output_path)
             
-            logger.info(f"Логотип добавлен на изображение: {position}")
-            return output
-        
-        except Exception as e:
-            logger.error(f"Ошибка при добавлении логотипа: {e}")
-            return None
-    
-    def generate_post_cover(
-        self,
-        text: str,
-        background_color: Tuple[int, int, int] = (41, 128, 185),
-        text_color: Tuple[int, int, int] = (255, 255, 255),
-        size: Tuple[int, int] = (1200, 630),
-        output_path: Optional[Path] = None
-    ) -> Optional[Path]:
-        """
-        Генерирует обложку для поста с текстом
-        
-        Args:
-            text: Текст для обложки
-            background_color: Цвет фона (RGB)
-            text_color: Цвет текста (RGB)
-            size: Размер изображения
-            output_path: Путь для сохранения
-        
-        Returns:
-            Путь к созданной обложке или None
-        """
-        try:
-            # Создаем изображение
-            image = Image.new('RGB', size, background_color)
-            draw = ImageDraw.Draw(image)
-            
-            # Пытаемся загрузить шрифт
-            try:
-                # Пробуем разные шрифты в зависимости от системы
-                font_paths = [
-                    "/System/Library/Fonts/Helvetica.ttc",  # macOS
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
-                    "C:/Windows/Fonts/arial.ttf",  # Windows
-                ]
-                
-                font_size = 48
-                font = None
-                
-                for font_path in font_paths:
-                    if Path(font_path).exists():
-                        try:
-                            font = ImageFont.truetype(font_path, font_size)
-                            break
-                        except:
-                            continue
-                
-                if font is None:
-                    font = ImageFont.load_default()
-            
-            except Exception:
-                font = ImageFont.load_default()
-            
-            # Разбиваем текст на строки
-            words = text.split()
-            lines = []
-            current_line = []
-            
-            max_width = size[0] - 100  # Отступы 50px с каждой стороны
-            
-            for word in words:
-                test_line = ' '.join(current_line + [word])
-                bbox = draw.textbbox((0, 0), test_line, font=font)
-                text_width = bbox[2] - bbox[0]
-                
-                if text_width <= max_width:
-                    current_line.append(word)
-                else:
-                    if current_line:
-                        lines.append(' '.join(current_line))
-                    current_line = [word]
-            
-            if current_line:
-                lines.append(' '.join(current_line))
-            
-            # Ограничиваем количество строк
-            lines = lines[:5]
-            
-            # Рисуем текст по центру
-            total_height = sum(draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] + 10 for line in lines)
-            start_y = (size[1] - total_height) // 2
-            
-            for i, line in enumerate(lines):
-                bbox = draw.textbbox((0, 0), line, font=font)
-                text_width = bbox[2] - bbox[0]
-                text_height = bbox[3] - bbox[1]
-                x = (size[0] - text_width) // 2
-                y = start_y + i * (text_height + 10)
-                
-                draw.text((x, y), line, fill=text_color, font=font)
-            
-            # Сохраняем изображение
-            if output_path is None:
-                from datetime import datetime
-                output_path = Path(f"/tmp/post_cover_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-            
-            image.save(output_path, quality=95)
-            logger.info(f"Обложка для поста создана: {output_path}")
+            logger.info(f"Логотип добавлен на изображение: {output_path}")
             return output_path
         
         except Exception as e:
-            logger.error(f"Ошибка при создании обложки: {e}")
+            logger.exception(f"Ошибка при добавлении логотипа: {e}")
+            return None
+    
+    async def resize_for_platform(
+        self,
+        image_path: Path,
+        platform: str
+    ) -> Optional[Path]:
+        """
+        Изменяет размер изображения под платформу
+        
+        Args:
+            image_path: Путь к исходному изображению
+            platform: Платформа (telegram, vk, instagram, facebook, twitter)
+        
+        Returns:
+            Путь к обработанному изображению или None
+        """
+        # Размеры для разных платформ
+        platform_sizes = {
+            "telegram": (1024, 1024),
+            "vk": (1200, 1200),
+            "instagram": (1080, 1080),
+            "instagram_story": (1080, 1920),
+            "facebook": (1200, 630),
+            "twitter": (1200, 675)
+        }
+        
+        target_size = platform_sizes.get(platform.lower(), (1024, 1024))
+        
+        try:
+            img = Image.open(image_path)
+            
+            # Изменяем размер с сохранением пропорций
+            img.thumbnail(target_size, Image.Resampling.LANCZOS)
+            
+            # Создаем новое изображение нужного размера
+            new_img = Image.new("RGB", target_size, (255, 255, 255))
+            
+            # Вставляем изображение по центру
+            img_width, img_height = img.size
+            x = (target_size[0] - img_width) // 2
+            y = (target_size[1] - img_height) // 2
+            new_img.paste(img, (x, y))
+            
+            # Сохраняем
+            output_path = image_path.parent / f"{image_path.stem}_{platform}{image_path.suffix}"
+            new_img.save(output_path)
+            
+            logger.info(f"Изображение изменено под {platform}: {output_path}")
+            return output_path
+        
+        except Exception as e:
+            logger.exception(f"Ошибка при изменении размера изображения: {e}")
+            return None
+    
+    async def create_collage(
+        self,
+        image_paths: List[Path],
+        layout: str = "grid",
+        output_size: Tuple[int, int] = (1080, 1080)
+    ) -> Optional[Path]:
+        """
+        Создает коллаж из нескольких изображений
+        
+        Args:
+            image_paths: Список путей к изображениям
+            layout: Расположение (grid, horizontal, vertical)
+            output_size: Размер выходного изображения
+        
+        Returns:
+            Путь к коллажу или None
+        """
+        try:
+            if not image_paths:
+                return None
+            
+            images = []
+            for path in image_paths:
+                if path.exists():
+                    img = Image.open(path)
+                    images.append(img)
+            
+            if not images:
+                return None
+            
+            if layout == "grid":
+                # Сетка 2x2 или 3x3
+                cols = 2 if len(images) <= 4 else 3
+                rows = (len(images) + cols - 1) // cols
+                
+                cell_width = output_size[0] // cols
+                cell_height = output_size[1] // rows
+                
+                collage = Image.new("RGB", output_size, (255, 255, 255))
+                
+                for i, img in enumerate(images[:cols * rows]):
+                    row = i // cols
+                    col = i % cols
+                    
+                    # Изменяем размер изображения
+                    img.thumbnail((cell_width, cell_height), Image.Resampling.LANCZOS)
+                    
+                    # Позиция
+                    x = col * cell_width + (cell_width - img.width) // 2
+                    y = row * cell_height + (cell_height - img.height) // 2
+                    
+                    collage.paste(img, (x, y))
+            
+            elif layout == "horizontal":
+                # Горизонтальное расположение
+                total_width = sum(img.width for img in images)
+                max_height = max(img.height for img in images)
+                
+                collage = Image.new("RGB", (total_width, max_height), (255, 255, 255))
+                x = 0
+                for img in images:
+                    y = (max_height - img.height) // 2
+                    collage.paste(img, (x, y))
+                    x += img.width
+            
+            elif layout == "vertical":
+                # Вертикальное расположение
+                max_width = max(img.width for img in images)
+                total_height = sum(img.height for img in images)
+                
+                collage = Image.new("RGB", (max_width, total_height), (255, 255, 255))
+                y = 0
+                for img in images:
+                    x = (max_width - img.width) // 2
+                    collage.paste(img, (x, y))
+                    y += img.height
+            
+            # Сохраняем
+            output_path = image_paths[0].parent / f"collage_{len(images)}_images{image_paths[0].suffix}"
+            collage.save(output_path)
+            
+            logger.info(f"Коллаж создан: {output_path}")
+            return output_path
+        
+        except Exception as e:
+            logger.exception(f"Ошибка при создании коллажа: {e}")
             return None
 
 
-# Глобальный экземпляр сервиса
+# Глобальный экземпляр
 image_processing_service = ImageProcessingService()
-

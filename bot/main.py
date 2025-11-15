@@ -37,6 +37,11 @@ from bot.handlers.analytics import setup_analytics_handlers
 from bot.handlers.ab_testing import setup_ab_testing_handlers
 from bot.handlers.calendar import setup_calendar_handlers
 from bot.handlers.team import setup_team_handlers
+from bot.handlers.team_advanced import setup_team_advanced_handlers
+from bot.handlers.smart_menu import setup_smart_menu_handlers
+from bot.handlers.quick_commands import setup_quick_commands_handlers
+from bot.handlers.platform_optimization import setup_platform_optimization_handlers
+from bot.handlers.post_series import setup_post_series_handlers
 from bot.services.scheduler import start_scheduler
 
 logger = logging.getLogger(__name__)
@@ -89,6 +94,19 @@ def setup_handlers(application: Application):
     
     # Командная работа
     setup_team_handlers(application)
+    setup_team_advanced_handlers(application)
+    
+    # Умное меню с категориями
+    setup_smart_menu_handlers(application)
+    
+    # Команды быстрого доступа
+    setup_quick_commands_handlers(application)
+    
+    # Оптимизация под платформы
+    setup_platform_optimization_handlers(application)
+    
+    # Генерация серий постов
+    setup_post_series_handlers(application)
     
     # Настройки
     setup_settings_handlers(application)

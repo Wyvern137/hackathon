@@ -13,6 +13,8 @@ from bot.services.ai.openrouter import openrouter_api
 from bot.services.ai.speech_recognition import speech_recognition_service
 from bot.services.content.hashtag_generator import hashtag_generator
 from bot.services.content.text_processor import text_processor
+from bot.services.content.platform_optimizer import platform_optimizer, Platform
+from bot.keyboards.platform_keyboard import get_platform_selection_keyboard, parse_platform_callback
 from bot.database.models import ContentHistory, NKOProfile
 from bot.database.database import get_db
 from bot.utils.helpers import get_or_create_user
@@ -29,7 +31,8 @@ async def show_text_generation_menu(update: Update, context: ContextTypes.DEFAUL
         "Выбери способ генерации:\n\n"
         "• **Свободный текст** - введи идею, я перепишу её в готовый пост\n"
         "• **Структурированная форма** - отвечай на вопросы, я создам пост\n"
-        "• **На основе примеров** - пришли примеры постов, я создам похожий стиль"
+        "• **На основе примеров** - пришли примеры постов, я создам похожий стиль\n\n"
+        "💡 *Совет:* Можно выбрать платформу для оптимизации текста (Telegram, VK, Instagram и др.)"
     )
     
     await update.message.reply_text(
@@ -172,22 +175,27 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         emoji_allowed_styles = ["разговорный", "дружелюбный", "художественный"]
         context.user_data['emoji_allowed'] = extracted_style in emoji_allowed_styles
         
-        # Переходим сразу к генерации
+        # Переходим сразу к генерации с прогресс-баром
+        from bot.utils.progress import ProgressBar
         processing_msg = await update.message.reply_text(
             f"✅ Стиль определен: {extracted_style}\n\n"
-            "⏳ Генерирую пост в этом стиле...\n\n"
-            "Это может занять несколько секунд."
+            "⏳ Анализ запроса..."
         )
+        progress = ProgressBar(processing_msg, 4)
+        await progress.update(0, "⏳ Анализ запроса...")
         
         # Вызываем генерацию напрямую
-        return await _generate_text_from_free_input(update, context, processing_msg, extracted_style)
+        return await _generate_text_from_free_input(update, context, progress, extracted_style)
     
     # Стиль не найден, предлагаем выбрать
-    await update.message.reply_text(
+    from bot.utils.progress import update_progress_message
+    processing_msg = await update.message.reply_text(
         "✅ Текст принят!\n\n"
+        "⏳ Анализ запроса...\n\n"
         "Выбери стиль написания поста:",
         reply_markup=get_style_keyboard()
     )
+    await update_progress_message(processing_msg, "⏳ Анализ запроса...", 0, 4)
     
     return "waiting_style"
 
@@ -195,7 +203,7 @@ async def handle_free_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def _generate_text_from_free_input(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    processing_msg,
+    processing_msg_or_progress,
     style: str
 ):
     """
@@ -204,10 +212,22 @@ async def _generate_text_from_free_input(
     Args:
         update: Update объект
         context: Context объект
-        processing_msg: Сообщение для обновления статуса
+        processing_msg_or_progress: Сообщение или ProgressBar для обновления статуса
         style: Выбранный стиль
     """
+    from bot.utils.progress import ProgressBar, update_progress_message
+    
+    # Определяем, это ProgressBar или обычное сообщение
+    is_progress_bar = isinstance(processing_msg_or_progress, ProgressBar)
+    progress = processing_msg_or_progress if is_progress_bar else None
+    processing_msg = processing_msg_or_progress if not is_progress_bar else processing_msg_or_progress.message
+    
     try:
+        # Обновляем прогресс
+        if progress:
+            await progress.update(1, "🤔 Генерация контента...")
+        else:
+            await update_progress_message(processing_msg, "🤔 Генерация контента...", 1, 4)
         # Получаем профиль НКО
         user_id = update.effective_user.id
         nko_profile = None
@@ -292,6 +312,12 @@ async def _generate_text_from_free_input(
 
 Пиши просто, живо, с душой!"""
         
+        # Обновляем прогресс перед генерацией
+        if progress:
+            await progress.update(1, "🤔 Генерация контента...")
+        else:
+            await update_progress_message(processing_msg, "🤔 Генерация контента...", 1, 4)
+        
         # Генерируем текст с повышенной температурой для более живого текста
         result = await openrouter_api.generate_text(
             prompt=prompt,
@@ -302,6 +328,12 @@ async def _generate_text_from_free_input(
         
         if result and result.get("success"):
             generated_text = result.get("content", "")
+            
+            # Обновляем прогресс перед форматированием
+            if progress:
+                await progress.update(2, "✨ Форматирование...")
+            else:
+                await update_progress_message(processing_msg, "✨ Форматирование...", 2, 4)
             
             # Генерируем хештеги
             hashtags = await hashtag_generator.generate_hashtags(
@@ -315,6 +347,21 @@ async def _generate_text_from_free_input(
             final_text = text_processor.format_for_telegram(generated_text)
             if hashtags:
                 final_text = text_processor.add_hashtags(final_text, hashtags)
+            
+            # Проверяем, выбрана ли платформа для оптимизации
+            selected_platform = context.user_data.get('selected_platform')
+            if selected_platform:
+                # Оптимизируем под платформу
+                optimized = platform_optimizer.optimize_text(final_text, selected_platform)
+                final_text = optimized["text"]
+                context.user_data['platform_optimized'] = True
+                context.user_data['platform_info'] = optimized
+            
+            # Обновляем прогресс - готово
+            if progress:
+                await progress.update(3, "✅ Готово!")
+            else:
+                await update_progress_message(processing_msg, "✅ Готово!", 3, 4)
             
             # Сохраняем в историю
             user_id = update.effective_user.id
@@ -343,7 +390,15 @@ async def _generate_text_from_free_input(
             context.user_data['_conversation_active'] = True  # Продолжаем ConversationHandler
             
             # Отправляем результат
-            if hasattr(processing_msg, 'edit_text'):
+            if progress:
+                await progress.complete(f"✅ **Готово!** Вот твой пост:\n\n{final_text}")
+                # Отправляем финальное сообщение с результатом
+                await update.message.reply_text(
+                    f"✅ **Готово!** Вот твой пост:\n\n{final_text}",
+                    reply_markup=get_post_actions_keyboard(),
+                    parse_mode="Markdown"
+                )
+            elif hasattr(processing_msg, 'edit_text'):
                 await processing_msg.edit_text(
                     f"✅ **Готово!** Вот твой пост:\n\n{final_text}",
                     reply_markup=get_post_actions_keyboard(),
@@ -400,13 +455,16 @@ async def handle_style_selection(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data['style'] = style
     context.user_data['emoji_allowed'] = style in emoji_allowed_styles
     
-    # Отправляем сообщение о генерации
+    # Отправляем сообщение о генерации с прогресс-баром
+    from bot.utils.progress import ProgressBar
     processing_msg = await query.edit_message_text(
-        f"⏳ Генерирую пост в {style} стиле...\n\n"
-        "Это может занять несколько секунд."
+        f"⏳ Анализ запроса...\n\n"
+        f"Стиль: {style}"
     )
+    progress = ProgressBar(processing_msg, 4)
+    await progress.update(0, f"⏳ Анализ запроса...\n\nСтиль: {style}")
     
-    return await _generate_text_from_free_input(update, context, processing_msg, style)
+    return await _generate_text_from_free_input(update, context, progress, style)
 
 
 async def handle_examples_text(update: Update, context: ContextTypes.DEFAULT_TYPE):

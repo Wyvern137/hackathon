@@ -107,3 +107,4 @@ def stop_scheduler():
         scheduler.shutdown()
         logger.info("Планировщик остановлен")
 
+

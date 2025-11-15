@@ -2,40 +2,18 @@
 Главное меню и основные клавиатуры бота
 """
 from telegram import ReplyKeyboardMarkup, KeyboardButton
+from bot.keyboards.smart_menu import get_smart_menu_keyboard
 
 
-def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Возвращает клавиатуру главного меню"""
-    keyboard = [
-        [
-            KeyboardButton("📝 Генерация текста"),
-            KeyboardButton("🎨 Генерация изображения")
-        ],
-        [
-            KeyboardButton("✏️ Редактор текста"),
-            KeyboardButton("📅 Контент-план")
-        ],
-        [
-            KeyboardButton("📊 История"),
-            KeyboardButton("📋 Шаблоны")
-        ],
-        [
-            KeyboardButton("📈 Статистика"),
-            KeyboardButton("🔬 A/B тест")
-        ],
-        [
-            KeyboardButton("📅 Календарь"),
-            KeyboardButton("👥 Команда")
-        ],
-        [
-            KeyboardButton("⚙️ Настройки"),
-            KeyboardButton("ℹ️ О боте")
-        ],
-        [
-            KeyboardButton("❓ Помощь")
-        ]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+def get_main_menu_keyboard(user_id=None, compact=False) -> ReplyKeyboardMarkup:
+    """
+    Возвращает клавиатуру главного меню
+    
+    Args:
+        user_id: ID пользователя для персонализации
+        compact: Компактный режим
+    """
+    return get_smart_menu_keyboard(user_id=user_id, compact=compact)
 
 
 def get_back_keyboard() -> ReplyKeyboardMarkup:

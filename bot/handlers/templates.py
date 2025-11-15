@@ -522,3 +522,4 @@ def setup_templates_handlers(application):
         CallbackQueryHandler(templates_callback, pattern="^templates_|^template_")
     )
 
+

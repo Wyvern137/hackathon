@@ -236,3 +236,4 @@ class SpeechRecognitionService:
 # Глобальный экземпляр сервиса
 speech_recognition_service = SpeechRecognitionService()
 
+

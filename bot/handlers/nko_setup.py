@@ -61,6 +61,28 @@ async def nko_setup_template_callback(update: Update, context: ContextTypes.DEFA
         )
         return NKO_SETUP["org_name"]
     
+    elif callback_data == "nko_setup_import":
+        # Переходим к импорту по ИНН/ОГРН
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        import_keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🔢 ИНН", callback_data="import_inn"),
+                InlineKeyboardButton("🔢 ОГРН", callback_data="import_ogrn")
+            ],
+            [
+                InlineKeyboardButton("◀️ Назад", callback_data="nko_setup_back_to_templates")
+            ]
+        ])
+        
+        await query.edit_message_text(
+            "🔍 **Импорт данных организации**\n\n"
+            "Введи ИНН или ОГРН организации, и я попробую найти информацию о ней.\n\n"
+            "Выбери тип идентификатора:",
+            reply_markup=import_keyboard,
+            parse_mode="Markdown"
+        )
+        return NKO_SETUP["import_selection"]
+    
     elif callback_data.startswith("template_"):
         # Применяем выбранный шаблон
         template_id = callback_data.replace("template_", "")
@@ -93,6 +115,120 @@ async def nko_setup_template_callback(update: Update, context: ContextTypes.DEFA
             return NKO_SETUP["template_selection"]
     
     return NKO_SETUP["template_selection"]
+
+
+async def nko_setup_import_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка выбора типа импорта (ИНН/ОГРН)"""
+    query = update.callback_query
+    await query.answer()
+    
+    callback_data = query.data
+    
+    if callback_data == "nko_setup_back_to_templates":
+        from bot.keyboards.inline import get_nko_template_keyboard
+        await query.edit_message_text(
+            "Отлично! Давай настроим профиль твоей НКО.\n\n"
+            "💡 *Совет:* Можешь выбрать готовый шаблон профиля или заполнить вручную.\n\n"
+            "Выбери шаблон или заполни профиль вручную:",
+            reply_markup=get_nko_template_keyboard(),
+            parse_mode="Markdown"
+        )
+        return NKO_SETUP["template_selection"]
+    
+    elif callback_data == "import_inn":
+        context.user_data['nko_setup'] = context.user_data.get('nko_setup', {})
+        context.user_data['nko_setup']['import_type'] = 'inn'
+        await query.edit_message_text(
+            "🔢 **Импорт по ИНН**\n\n"
+            "Введи ИНН организации (10 или 12 цифр):",
+            parse_mode="Markdown"
+        )
+        return NKO_SETUP["import_input"]
+    
+    elif callback_data == "import_ogrn":
+        context.user_data['nko_setup'] = context.user_data.get('nko_setup', {})
+        context.user_data['nko_setup']['import_type'] = 'ogrn'
+        await query.edit_message_text(
+            "🔢 **Импорт по ОГРН**\n\n"
+            "Введи ОГРН организации (13 или 15 цифр):",
+            parse_mode="Markdown"
+        )
+        return NKO_SETUP["import_input"]
+    
+    return NKO_SETUP["import_selection"]
+
+
+async def nko_setup_import_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ввода ИНН/ОГРН и поиск данных"""
+    user_id = update.effective_user.id
+    identifier = update.message.text.strip()
+    import_type = context.user_data.get('nko_setup', {}).get('import_type', 'inn')
+    
+    processing_msg = await update.message.reply_text("⏳ Ищу информацию об организации...")
+    
+    try:
+        # Пытаемся найти данные
+        if import_type == 'inn':
+            org_data = await nko_data_importer.search_by_inn(identifier)
+        else:
+            org_data = await nko_data_importer.search_by_ogrn(identifier)
+        
+        if org_data:
+            # Парсим данные и заполняем профиль
+            parsed_data = nko_data_importer.parse_organization_info(org_data)
+            
+            # Сохраняем данные в context
+            context.user_data.setdefault('nko_setup', {})
+            context.user_data['nko_setup'].update(parsed_data)
+            context.user_data['nko_setup']['imported'] = True
+            context.user_data['nko_setup']['import_identifier'] = identifier
+            
+            await processing_msg.edit_text(
+                f"✅ **Данные найдены!**\n\n"
+                f"*Организация:* {parsed_data.get('organization_name', 'не указано')}\n"
+                f"*Описание:* {parsed_data.get('description', 'не указано')[:100]}...\n\n"
+                "Данные предзаполнены. Можешь отредактировать их или продолжить.",
+                parse_mode="Markdown"
+            )
+            
+            # Переходим к редактированию названия
+            await update.message.reply_text(
+                "Шаг 1/7: Название организации:\n\n"
+                f"Текущее значение: {parsed_data.get('organization_name', 'не указано')}\n\n"
+                "Введи новое название или нажми 'Пропустить'.",
+                reply_markup=get_skip_keyboard()
+            )
+            return NKO_SETUP["org_name"]
+        else:
+            await processing_msg.edit_text(
+                "❌ **Данные не найдены**\n\n"
+                "Не удалось найти информацию об организации по указанному идентификатору.\n\n"
+                "Возможные причины:\n"
+                "• ИНН/ОГРН указан неверно\n"
+                "• Организация не найдена в открытых реестрах\n"
+                "• Сервис поиска временно недоступен\n\n"
+                "Попробуй заполнить профиль вручную или выбрать шаблон.",
+                parse_mode="Markdown"
+            )
+            # Предлагаем вернуться к выбору
+            from bot.keyboards.inline import get_nko_template_keyboard
+            await update.message.reply_text(
+                "Выбери способ настройки профиля:",
+                reply_markup=get_nko_template_keyboard()
+            )
+            return NKO_SETUP["template_selection"]
+    
+    except Exception as e:
+        logger.exception(f"Ошибка при импорте данных НКО: {e}")
+        await processing_msg.edit_text(
+            "❌ Произошла ошибка при поиске данных. Попробуй заполнить профиль вручную."
+        )
+        from bot.keyboards.inline import get_nko_template_keyboard
+        await update.message.reply_text(
+            "Выбери способ настройки профиля:",
+            reply_markup=get_nko_template_keyboard()
+        )
+        return NKO_SETUP["template_selection"]
 
 
 async def nko_setup_skip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -345,7 +481,13 @@ def setup_nko_handlers(application):
         ],
         states={
             NKO_SETUP["template_selection"]: [
-                CallbackQueryHandler(nko_setup_template_callback, pattern="^(template_|nko_setup_manual)$")
+                CallbackQueryHandler(nko_setup_template_callback, pattern="^(template_|nko_setup_manual|nko_setup_import)$")
+            ],
+            NKO_SETUP["import_selection"]: [
+                CallbackQueryHandler(nko_setup_import_selection_callback, pattern="^(import_inn|import_ogrn|nko_setup_back_to_templates)$")
+            ],
+            NKO_SETUP["import_input"]: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, nko_setup_import_input)
             ],
             NKO_SETUP["org_name"]: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, nko_setup_org_name)
