@@ -15,8 +15,16 @@ from telegram.ext import (
 
 from bot.config import config
 from bot.database.database import init_db
-from bot.handlers.start import start_command, help_command, about_command
-from bot.handlers.common import button_handler, error_handler, cancel_conversation, back_to_menu
+from bot.handlers.start import (
+    start_command, 
+    help_command, 
+    about_command,
+    quick_start_callback,
+    show_demo_examples,
+    show_achievements_callback,
+    handle_voice_after_start
+)
+from bot.handlers.common import button_handler, error_handler, cancel_conversation, back_to_menu, handle_voice_in_main_menu
 from bot.handlers.nko_setup import setup_nko_handlers
 from bot.handlers.text_generation import setup_text_generation_handlers
 from bot.handlers.image_generation import setup_image_generation_handlers
@@ -24,6 +32,12 @@ from bot.handlers.text_editor import setup_text_editor_handlers
 from bot.handlers.content_plan import setup_content_plan_handlers
 from bot.handlers.history import setup_history_handlers
 from bot.handlers.settings import setup_settings_handlers
+from bot.handlers.templates import setup_templates_handlers
+from bot.handlers.analytics import setup_analytics_handlers
+from bot.handlers.ab_testing import setup_ab_testing_handlers
+from bot.handlers.calendar import setup_calendar_handlers
+from bot.handlers.team import setup_team_handlers
+from bot.services.scheduler import start_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +48,14 @@ def setup_handlers(application: Application):
     # Команды
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    
+    # Обработчик голосовых сообщений после /start (должен быть до других обработчиков)
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice_after_start))
+    
+    # Обработчики быстрого старта и примеров
+    application.add_handler(CallbackQueryHandler(quick_start_callback, pattern="^(quick_start_guide|how_it_works)$"))
+    application.add_handler(CallbackQueryHandler(show_demo_examples, pattern="^(show_demo_examples|show_more_examples)$"))
+    application.add_handler(CallbackQueryHandler(show_achievements_callback, pattern="^(show_achievements|show_all_achievements)$"))
     
     # Настройка профиля НКО
     setup_nko_handlers(application)
@@ -53,8 +75,26 @@ def setup_handlers(application: Application):
     # История
     setup_history_handlers(application)
     
+    # Шаблоны
+    setup_templates_handlers(application)
+    
+    # Статистика
+    setup_analytics_handlers(application)
+    
+    # A/B тестирование
+    setup_ab_testing_handlers(application)
+    
+    # Календарь событий
+    setup_calendar_handlers(application)
+    
+    # Командная работа
+    setup_team_handlers(application)
+    
     # Настройки
     setup_settings_handlers(application)
+    
+    # Обработчик голосовых сообщений в главном меню (должен быть после ConversationHandler, но до button_handler)
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice_in_main_menu))
     
     # Обработчик кнопок главного меню (должен быть ПОСЛЕ всех ConversationHandler)
     # Это важно, чтобы ConversationHandler обрабатывали сообщения первыми
@@ -82,6 +122,10 @@ async def run_bot():
         
         # Настройка обработчиков
         setup_handlers(application)
+        
+        # Запуск планировщика для напоминаний
+        start_scheduler()
+        logger.info("Планировщик запущен")
         
         # Запуск бота
         logger.info("Бот запускается...")

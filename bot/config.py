@@ -29,9 +29,11 @@ class Config:
         "deepseek/deepseek-chat"
     ]
     
-    # Генерация изображений (YandexART или другой сервис)
+    # Генерация изображений (YandexART или GigaChat)
     YANDEX_ART_API_KEY: str = os.getenv("YANDEX_ART_API_KEY", "")
+    GIGACHAT_API_KEY: str = os.getenv("GIGACHAT_API_KEY", "")
     IMAGE_GENERATION_ENABLED: bool = os.getenv("IMAGE_GENERATION_ENABLED", "true").lower() == "true"
+    IMAGE_GENERATION_PROVIDER: str = os.getenv("IMAGE_GENERATION_PROVIDER", "gigachat")  # gigachat или yandex
     
     # База данных
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///bot.db")
@@ -62,6 +64,10 @@ class Config:
     # Настройки истории
     MAX_HISTORY_ITEMS: int = 100  # Максимум элементов в истории на пользователя
     
+    # Настройки распознавания речи (OpenRouter Whisper)
+    OPENROUTER_WHISPER_MODEL: str = os.getenv("OPENROUTER_WHISPER_MODEL", "openai/whisper-1")  # Модель Whisper через OpenRouter
+    SPEECH_RECOGNITION_LANGUAGE: str = os.getenv("SPEECH_RECOGNITION_LANGUAGE", "ru")  # Язык распознавания
+    
     @classmethod
     def validate(cls) -> bool:
         """Проверяет наличие обязательных переменных окружения"""
@@ -85,6 +91,7 @@ class Config:
         # Создаем необходимые директории
         cls.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
         cls.TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+        (cls.DATA_DIR / "temp_voice").mkdir(parents=True, exist_ok=True)
         
         return True
 

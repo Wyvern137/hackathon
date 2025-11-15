@@ -1,0 +1,60 @@
+{
+  "templates": [
+    {
+      "id": "animal_welfare_weekly",
+      "name": "Еженедельный план для приюта",
+      "category": "animal_welfare",
+      "frequency": 3,
+      "content_types": [
+        {"type": "news", "description": "Новости о подопечных"},
+        {"type": "announcement", "description": "Анонс мероприятий"},
+        {"type": "thanks", "description": "Благодарность волонтерам"}
+      ],
+      "suggestions": [
+        "Приветствие новых подопечных",
+        "Рассказ о животных, ищущих дом",
+        "Благодарность волонтерам и спонсорам",
+        "Анонс открытых дней приюта",
+        "Образовательный пост о заботе о животных"
+      ]
+    },
+    {
+      "id": "environmental_monthly",
+      "name": "Ежемесячный план для экологической НКО",
+      "category": "environmental",
+      "frequency": 4,
+      "content_types": [
+        {"type": "educational", "description": "Образовательный контент"},
+        {"type": "news", "description": "Экологические новости"},
+        {"type": "announcement", "description": "Анонс мероприятий"},
+        {"type": "report", "description": "Отчет о деятельности"}
+      ],
+      "suggestions": [
+        "Советы по экологичному образу жизни",
+        "Новости об экологических проблемах",
+        "Анонс экологических акций",
+        "Отчет о проведенных мероприятиях",
+        "Информация о волонтерских программах"
+      ]
+    },
+    {
+      "id": "humanitarian_weekly",
+      "name": "Еженедельный план для гуманитарной помощи",
+      "category": "humanitarian",
+      "frequency": 3,
+      "content_types": [
+        {"type": "news", "description": "Новости о помощи"},
+        {"type": "thanks", "description": "Благодарность"},
+        {"type": "announcement", "description": "Призыв к помощи"}
+      ],
+      "suggestions": [
+        "Истории о помощи людям",
+        "Благодарность благотворителям",
+        "Призыв к участию в акциях",
+        "Информация о нуждающихся",
+        "Отчеты о собранных средствах"
+      ]
+    }
+  ]
+}
+

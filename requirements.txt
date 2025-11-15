@@ -12,4 +12,9 @@ pytz==2023.3
 openpyxl==3.1.2
 python-docx==1.1.0
 reportlab==4.0.7
+textstat==0.7.3
+icalendar==5.0.11
+matplotlib==3.8.2
+pandas==2.1.4
+vaderSentiment==3.3.2
 

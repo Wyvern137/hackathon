@@ -7,10 +7,12 @@ from telegram.ext import ContextTypes, ConversationHandler, CallbackQueryHandler
 from bot.database.models import NKOProfile, ActivityType
 from bot.database.database import get_db
 from bot.keyboards.main_menu import get_main_menu_keyboard, get_skip_keyboard
-from bot.keyboards.inline import get_activity_types_keyboard
+from bot.keyboards.inline import get_activity_types_keyboard, get_nko_template_keyboard
 from bot.states.conversation import NKO_SETUP, END
 from bot.utils.validators import validators
 from bot.utils.helpers import get_or_create_user
+from bot.utils.template_loader import get_template_by_id, apply_profile_template
+from bot.services.nko_data_importer import nko_data_importer
 
 logger = logging.getLogger(__name__)
 
@@ -23,23 +25,74 @@ async def nko_setup_start_callback(update: Update, context: ContextTypes.DEFAULT
     user_id = update.effective_user.id
     db_user = get_or_create_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
     
-    # Проверяем, есть ли уже профиль
+    # Проверяем, есть ли уже профили
     with get_db() as db:
-        existing_profile = db.query(NKOProfile).filter(NKOProfile.user_id == user_id).first()
-        if existing_profile:
-            await query.edit_message_text(
-                "У тебя уже есть профиль НКО. Хочешь обновить его?",
-                reply_markup=None
-            )
-            context.user_data['nko_setup'] = {'update_existing': True, 'profile_id': existing_profile.id}
+        existing_profiles = db.query(NKOProfile).filter(NKOProfile.user_id == user_id).all()
+        if existing_profiles:
+            # Если есть профили, можно предложить создать новый или обновить существующий
+            context.user_data['nko_setup'] = {'existing_profiles': len(existing_profiles)}
     
+    # Предлагаем выбрать шаблон
     await query.edit_message_text(
         "Отлично! Давай настроим профиль твоей НКО.\n\n"
-        "Шаг 1/7: Как называется твоя организация?\n\n"
-        "Введи название или нажми 'Пропустить'."
+        "💡 *Совет:* Можешь выбрать готовый шаблон профиля или заполнить вручную.\n\n"
+        "Выбери шаблон или заполни профиль вручную:",
+        reply_markup=get_nko_template_keyboard(),
+        parse_mode="Markdown"
     )
     
-    return NKO_SETUP["org_name"]
+    return NKO_SETUP["template_selection"]
+
+
+async def nko_setup_template_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка выбора шаблона профиля"""
+    query = update.callback_query
+    await query.answer()
+    
+    callback_data = query.data
+    
+    if callback_data == "nko_setup_manual":
+        # Переходим к ручному заполнению
+        await query.edit_message_text(
+            "Хорошо, заполним профиль вручную.\n\n"
+            "Шаг 1/7: Как называется твоя организация?\n\n"
+            "Введи название или нажми 'Пропустить'.",
+            reply_markup=get_skip_keyboard()
+        )
+        return NKO_SETUP["org_name"]
+    
+    elif callback_data.startswith("template_"):
+        # Применяем выбранный шаблон
+        template_id = callback_data.replace("template_", "")
+        template = get_template_by_id(template_id)
+        
+        if template:
+            # Применяем шаблон к user_data
+            context.user_data.setdefault('nko_setup', {})
+            context.user_data['nko_setup'] = apply_profile_template(
+                template,
+                context.user_data['nko_setup']
+            )
+            context.user_data['nko_setup']['template_used'] = template_id
+            
+            # Показываем предзаполненные данные и предлагаем отредактировать
+            template_name = template.get("name", "Шаблон")
+            await query.edit_message_text(
+                f"✅ Шаблон '{template_name}' применен!\n\n"
+                f"*Предзаполненные данные:*\n"
+                f"Организация: {context.user_data['nko_setup'].get('organization_name', 'не указано')}\n"
+                f"Деятельность: {context.user_data['nko_setup'].get('description', 'не указано')[:50]}...\n\n"
+                "Хочешь отредактировать? Нажми 'Далее' или 'Редактировать'",
+                reply_markup=None,
+                parse_mode="Markdown"
+            )
+            # Переходим к редактированию названия
+            return NKO_SETUP["org_name"]
+        else:
+            await query.answer("Шаблон не найден")
+            return NKO_SETUP["template_selection"]
+    
+    return NKO_SETUP["template_selection"]
 
 
 async def nko_setup_skip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -246,17 +299,12 @@ async def nko_setup_brand_colors(update: Update, context: ContextTypes.DEFAULT_T
     with get_db() as db:
         db_user = get_or_create_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
         
-        # Проверяем, есть ли уже профиль
-        existing_profile = db.query(NKOProfile).filter(NKOProfile.user_id == user_id).first()
-        
-        if existing_profile and setup_data.get('update_existing'):
-            # Обновляем существующий профиль
-            profile = existing_profile
-        else:
-            profile = NKOProfile(user_id=user_id)
-            db.add(profile)
+        # Создаем новый профиль
+        profile = NKOProfile(user_id=user_id)
+        db.add(profile)
         
         # Заполняем данные
+        profile.profile_name = setup_data.get('profile_name') or setup_data.get('org_name')
         profile.organization_name = setup_data.get('org_name')
         profile.description = setup_data.get('description')
         profile.activity_types = setup_data.get('activity_types', [])
@@ -265,6 +313,14 @@ async def nko_setup_brand_colors(update: Update, context: ContextTypes.DEFAULT_T
         profile.contact_info = setup_data.get('contact_info')
         profile.brand_colors = setup_data.get('brand_colors')
         profile.is_complete = True
+        
+        # Если это первый профиль, делаем его активным
+        db_user = get_or_create_user(user_id, update.effective_user.username, update.effective_user.first_name or "")
+        existing_profiles_count = db.query(NKOProfile).filter(NKOProfile.user_id == user_id).count()
+        if existing_profiles_count == 0:
+            # Это будет первый профиль после добавления
+            db.flush()  # Получаем ID нового профиля
+            db_user.active_profile_id = profile.id
         
         db.commit()
     
@@ -288,6 +344,9 @@ def setup_nko_handlers(application):
             CallbackQueryHandler(nko_setup_start_callback, pattern="^nko_setup_start$"),
         ],
         states={
+            NKO_SETUP["template_selection"]: [
+                CallbackQueryHandler(nko_setup_template_callback, pattern="^(template_|nko_setup_manual)$")
+            ],
             NKO_SETUP["org_name"]: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, nko_setup_org_name)
             ],

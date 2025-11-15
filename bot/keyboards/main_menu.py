@@ -17,10 +17,21 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
         ],
         [
             KeyboardButton("📊 История"),
-            KeyboardButton("⚙️ Настройки")
+            KeyboardButton("📋 Шаблоны")
         ],
         [
-            KeyboardButton("ℹ️ О боте"),
+            KeyboardButton("📈 Статистика"),
+            KeyboardButton("🔬 A/B тест")
+        ],
+        [
+            KeyboardButton("📅 Календарь"),
+            KeyboardButton("👥 Команда")
+        ],
+        [
+            KeyboardButton("⚙️ Настройки"),
+            KeyboardButton("ℹ️ О боте")
+        ],
+        [
             KeyboardButton("❓ Помощь")
         ]
     ]

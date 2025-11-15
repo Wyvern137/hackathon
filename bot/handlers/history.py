@@ -4,9 +4,11 @@
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.utils.helpers import get_or_create_user
 from bot.database.models import ContentHistory
 from bot.database.database import get_db
+from bot.utils.export import export_history_to_txt, export_texts_to_csv
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +51,63 @@ async def show_history_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(history_items) > 5:
         text += f"\n... и еще {len(history_items) - 5} элементов"
     
-    await update.message.reply_text(text, parse_mode="Markdown")
+    # Кнопки экспорта
+    export_keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📥 Экспорт TXT", callback_data="export_history_txt"),
+            InlineKeyboardButton("📊 Экспорт CSV", callback_data="export_history_csv")
+        ]
+    ])
+    
+    await update.message.reply_text(text, reply_markup=export_keyboard, parse_mode="Markdown")
+
+
+async def handle_export_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка экспорта истории"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    callback_data = query.data
+    
+    if callback_data == "export_history_txt":
+        await query.edit_message_text("⏳ Экспортирую историю в TXT...")
+        
+        file_path = await export_history_to_txt(user_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ История экспортирована в TXT файл"
+                )
+            await query.edit_message_text("✅ Экспорт завершен!")
+        else:
+            await query.edit_message_text("❌ Ошибка при экспорте. Попробуй еще раз.")
+    
+    elif callback_data == "export_history_csv":
+        await query.edit_message_text("⏳ Экспортирую тексты в CSV...")
+        
+        file_path = await export_texts_to_csv(user_id)
+        
+        if file_path and file_path.exists():
+            with open(file_path, 'rb') as f:
+                await query.message.reply_document(
+                    document=f,
+                    filename=file_path.name,
+                    caption="✅ Тексты экспортированы в CSV файл"
+                )
+            await query.edit_message_text("✅ Экспорт завершен!")
+        else:
+            await query.edit_message_text("❌ Ошибка при экспорте. Попробуй еще раз.")
 
 
 def setup_history_handlers(application):
     """Настройка обработчиков истории"""
-    pass
+    from telegram.ext import CallbackQueryHandler
+    # Callback для экспорта
+    application.add_handler(
+        CallbackQueryHandler(handle_export_callback, pattern="^export_history_")
+    )
 

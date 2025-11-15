@@ -191,6 +191,82 @@ class OpenRouterAPI:
             return []
 
 
+    async def generate_text_variants(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        count: int = 3,
+        model: Optional[str] = None,
+        temperature: float = 0.8,
+        max_tokens: int = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Генерирует несколько вариантов одного текста
+        
+        Args:
+            prompt: Текст запроса для генерации
+            system_prompt: Системный промпт (опционально)
+            count: Количество вариантов (3-5)
+            model: ID модели (если не указан, используется модель по умолчанию)
+            temperature: Температура генерации (0.0-1.0)
+            max_tokens: Максимальное количество токенов в ответе
+        
+        Returns:
+            Список словарей с вариантами текста
+        """
+        count = min(max(count, 3), 5)  # Ограничиваем от 3 до 5
+        max_tokens = max_tokens or config.DEFAULT_MAX_TOKENS
+        
+        variants = []
+        
+        # Генерируем варианты с разными подходами
+        approaches = [
+            "Создай более эмоциональный вариант",
+            "Создай более информативный вариант",
+            "Создай более дружелюбный вариант",
+            "Создай более профессиональный вариант",
+            "Создай более креативный вариант"
+        ]
+        
+        for i in range(count):
+            approach = approaches[i] if i < len(approaches) else f"Создай вариант {i+1}"
+            
+            variant_prompt = f"""{approach} следующего текста поста.
+
+Исходный запрос:
+{prompt}
+
+ТРЕБОВАНИЯ К ВАРИАНТУ:
+- Живой, естественный язык
+- Абзацы - ОБЯЗАТЕЛЬНО (разделяй пустой строкой)
+- 80-120 слов
+- Одна тема
+- Естественные переходы
+- Уместные эмоции
+- Простота языка
+
+Создай уникальный вариант текста с тем же смыслом, но другим подходом."""
+            
+            result = await self.generate_text(
+                prompt=variant_prompt,
+                system_prompt=system_prompt or "Ты эксперт по созданию контента для некоммерческих организаций.",
+                model=model,
+                temperature=temperature + (i * 0.1),  # Немного меняем температуру для разнообразия
+                max_tokens=max_tokens,
+                use_fallback=True
+            )
+            
+            if result and result.get("success"):
+                variants.append({
+                    "variant_number": i + 1,
+                    "text": result.get("content", ""),
+                    "approach": approach,
+                    "model": result.get("model_used", model or self.default_model)
+                })
+        
+        return variants
+
+
 # Глобальный экземпляр API
 openrouter_api = OpenRouterAPI()
 

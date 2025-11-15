@@ -64,19 +64,36 @@ def get_or_create_user(user_id: int, username: Optional[str] = None, first_name:
         return user
 
 
-def calculate_content_plan_dates(start_date: date, period_days: int) -> Tuple[date, date]:
+def calculate_content_plan_dates(period_days: int, frequency: int, days: list) -> Tuple[date, date, list]:
     """
-    Вычисляет даты начала и окончания контент-плана
+    Вычисляет даты начала, окончания и список дат публикаций для контент-плана
     
     Args:
-        start_date: Дата начала
         period_days: Период в днях
+        frequency: Частота публикаций в неделю
+        days: Список дней недели для публикаций (1=понедельник, 7=воскресенье)
     
     Returns:
-        (start_date, end_date)
+        (start_date, end_date, schedule_dates)
     """
+    start_date = date.today()
     end_date = start_date + timedelta(days=period_days - 1)
-    return start_date, end_date
+    
+    # Вычисляем даты публикаций
+    schedule_dates = []
+    current_date = start_date
+    
+    while current_date <= end_date:
+        # День недели (0=понедельник, 6=воскресенье)
+        # Преобразуем в формат 1=понедельник, 7=воскресенье
+        weekday = current_date.weekday() + 1
+        
+        if weekday in days:
+            schedule_dates.append(current_date)
+        
+        current_date += timedelta(days=1)
+    
+    return start_date, end_date, schedule_dates
 
 
 def parse_period_days(period_str: str) -> Optional[int]:

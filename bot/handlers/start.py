@@ -2,16 +2,296 @@
 Обработчик команды /start и /help
 """
 import logging
+from datetime import datetime, timedelta
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, CallbackQueryHandler
 
 from bot.keyboards.main_menu import get_main_menu_keyboard
-from bot.keyboards.inline import get_nko_setup_start_keyboard
+from bot.keyboards.inline import (
+    get_nko_setup_start_keyboard, 
+    get_quick_start_keyboard,
+    get_demo_examples_keyboard,
+    get_achievements_keyboard
+)
 from bot.utils.helpers import get_or_create_user
-from bot.database.models import NKOProfile
+from bot.database.models import User, NKOProfile, ContentHistory, ContentPlan, PostTemplate
 from bot.database.database import get_db
+from bot.services.ai.speech_recognition import speech_recognition_service
 
 logger = logging.getLogger(__name__)
+
+
+def get_user_statistics(user_id: int) -> dict:
+    """
+    Получает статистику использования бота для пользователя
+    
+    Args:
+        user_id: ID пользователя
+    
+    Returns:
+        Словарь со статистикой
+    """
+    with get_db() as db:
+        # Подсчет контента по типам
+        texts_count = db.query(ContentHistory).filter(
+            ContentHistory.user_id == user_id,
+            ContentHistory.content_type == "text"
+        ).count()
+        
+        images_count = db.query(ContentHistory).filter(
+            ContentHistory.user_id == user_id,
+            ContentHistory.content_type == "image"
+        ).count()
+        
+        plans_count = db.query(ContentPlan).filter(
+            ContentPlan.user_id == user_id
+        ).count()
+        
+        templates_count = db.query(PostTemplate).filter(
+            PostTemplate.user_id == user_id
+        ).count()
+        
+        # Статистика за последние 7 дней
+        week_ago = datetime.now() - timedelta(days=7)
+        recent_texts = db.query(ContentHistory).filter(
+            ContentHistory.user_id == user_id,
+            ContentHistory.content_type == "text",
+            ContentHistory.generated_at >= week_ago
+        ).count()
+        
+        recent_images = db.query(ContentHistory).filter(
+            ContentHistory.user_id == user_id,
+            ContentHistory.content_type == "image",
+            ContentHistory.generated_at >= week_ago
+        ).count()
+        
+        # Всего контента
+        total_content = texts_count + images_count
+        
+    return {
+        "texts_count": texts_count,
+        "images_count": images_count,
+        "plans_count": plans_count,
+        "templates_count": templates_count,
+        "total_content": total_content,
+        "recent_texts": recent_texts,
+        "recent_images": recent_images
+    }
+
+
+def get_achievements(user_id: int, stats: dict) -> list:
+    """
+    Получает список достижений пользователя
+    
+    Args:
+        user_id: ID пользователя
+        stats: Статистика пользователя
+    
+    Returns:
+        Список достижений
+    """
+    achievements = []
+    
+    if stats["total_content"] >= 1:
+        achievements.append("🎯 Первый шаг - создан первый контент!")
+    if stats["texts_count"] >= 5:
+        achievements.append("📝 Мастер слов - создано 5 постов!")
+    if stats["texts_count"] >= 10:
+        achievements.append("✨ Постмейкер - создано 10 постов!")
+    if stats["images_count"] >= 5:
+        achievements.append("🎨 Художник - создано 5 изображений!")
+    if stats["plans_count"] >= 1:
+        achievements.append("📅 Планировщик - создан контент-план!")
+    if stats["total_content"] >= 50:
+        achievements.append("🏆 Легенда - создано 50 постов!")
+    
+    return achievements
+
+
+async def show_demo_examples(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Показывает демонстрационные примеры сгенерированных постов
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    callback_data = query.data
+    
+    examples = [
+        {
+            "style": "💬 Разговорный стиль",
+            "text": """Сегодня у нас важная новость! В приюте появились новые жильцы — несколько собак нашли свой дом.
+
+Это не просто животные. Это новые члены нашей большой семьи. Мы уже начали заботиться о них: ветеринарный осмотр, уютное место для жизни, внимание и ласка.
+
+Если хочешь поддержать — заходи в гости. Будем рады!
+
+#помощьживотным #приют #благотворительность"""
+        },
+        {
+            "style": "📊 Нейтральный стиль",
+            "text": """Волонтерская организация проводит еженедельные занятия по экологии для детей.
+
+Программа включает теоретические занятия, практические эксперименты и экскурсии на природу. Занятия проходят каждую субботу с 10:00 до 12:00.
+
+Для участия необходимо предварительно зарегистрироваться.
+
+#экология #образование #детям"""
+        },
+        {
+            "style": "😊 Дружелюбный стиль",
+            "text": """Привет, друзья! 
+
+Хотим поделиться хорошей новостью — наш проект получил поддержку! Это значит, что мы сможем помочь еще большему количеству людей.
+
+Спасибо всем, кто верил в нас и поддерживал на этом пути. Вместе мы делаем мир лучше!
+
+#благотворительность #новости #спасибо"""
+        }
+    ]
+    
+    # Если запрошены дополнительные примеры, добавляем еще
+    if callback_data == "show_more_examples":
+        examples.extend([
+            {
+                "style": "✨ Художественный стиль",
+                "text": """В тишине вечернего неба зажигаются звезды надежды. 
+
+Каждое маленькое доброе дело — это капля в океане милосердия. Сегодня мы стали свидетелями чуда: сердца людей открылись навстречу тем, кто нуждается в помощи.
+
+Присоединяйся к нашему путешествию добра.
+
+#добро #милосердие #надежда"""
+            },
+            {
+                "style": "📄 Официальный стиль",
+                "text": """Уведомляем о проведении ежегодного отчетного собрания некоммерческой организации.
+
+Мероприятие состоится 15 декабря 2024 года в 18:00 по адресу: ул. Мира, д. 10.
+
+На повестке дня: отчет о деятельности за текущий год, планы на следующий год, выборы руководящего состава.
+
+Приглашаем всех заинтересованных лиц.
+
+#нко #отчет #собрание"""
+            }
+        ])
+    
+    text = "📚 **Демонстрационные примеры постов**\n\n"
+    text += "Вот несколько примеров постов, которые я могу создать:\n\n"
+    
+    for i, example in enumerate(examples, 1):
+        text += f"**{example['style']}**\n"
+        text += f"{example['text']}\n\n"
+        if i < len(examples):
+            text += "---\n\n"
+    
+    text += "💡 *Хочешь создать похожий пост? Используй кнопки ниже!*"
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=get_demo_examples_keyboard(),
+        parse_mode="Markdown"
+    )
+
+
+async def quick_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработчик быстрого старта
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    callback_data = query.data
+    
+    if callback_data == "quick_start_guide":
+        guide_text = """🚀 **Быстрый старт**
+
+Я помогу тебе создать контент за несколько простых шагов!
+
+**Шаг 1:** Создай профиль НКО (опционально)
+→ Это поможет мне лучше понимать твою организацию
+
+**Шаг 2:** Выбери функцию
+→ 📝 Генерация текста — для создания постов
+→ 🎨 Генерация изображения — для создания визуалов
+→ ✏️ Редактор текста — для улучшения готовых текстов
+→ 📅 Контент-план — для планирования публикаций
+
+**Шаг 3:** Следуй подсказкам
+→ Я помогу на каждом этапе
+
+**Готов начать?** Выбери действие ниже 👇"""
+        
+        await query.edit_message_text(
+            guide_text,
+            reply_markup=get_quick_start_keyboard(),
+            parse_mode="Markdown"
+        )
+    
+    elif callback_data == "how_it_works":
+        tutorial_text = """❓ **Как это работает?**
+
+**1. Генерация текста:**
+• Выбери тип генерации (свободный текст, структурированная форма, на основе примеров)
+• Опиши идею или ответь на вопросы
+• Я создам готовый пост с хештегами
+
+**2. Генерация изображений:**
+• Опиши изображение или прикрепи референсы
+• Выбери стиль и размер
+• Получи готовое изображение
+
+**3. Редактор текста:**
+• Отправь текст для редактирования
+• Получи исправления и рекомендации
+
+**4. Контент-план:**
+• Выбери период и частоту
+• Получи готовый план публикаций
+
+💡 **Совет:** Заполни профиль НКО для более релевантного контента!"""
+        
+        await query.edit_message_text(
+            tutorial_text,
+            reply_markup=get_demo_examples_keyboard(),
+            parse_mode="Markdown"
+        )
+
+
+async def show_achievements_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Показывает достижения пользователя
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    stats = get_user_statistics(user_id)
+    achievements = get_achievements(user_id, stats)
+    
+    text = "🏆 **Твои достижения**\n\n"
+    
+    if achievements:
+        text += "\n".join(achievements)
+    else:
+        text += "Пока нет достижений, но это нормально!\n\n"
+        text += "Начни использовать бота, и достижения появятся здесь."
+    
+    text += f"\n\n📊 **Твоя статистика:**\n"
+    text += f"• Постов создано: {stats['texts_count']}\n"
+    text += f"• Изображений создано: {stats['images_count']}\n"
+    text += f"• Контент-планов: {stats['plans_count']}\n"
+    text += f"• Шаблонов: {stats['templates_count']}\n"
+    text += f"\n💪 За последнюю неделю:\n"
+    text += f"• Постов: {stats['recent_texts']}\n"
+    text += f"• Изображений: {stats['recent_images']}"
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=get_achievements_keyboard(),
+        parse_mode="Markdown"
+    )
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,10 +315,22 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         language_code=user.language_code or "ru"
     )
     
-    # Проверяем, есть ли профиль НКО
+    # Проверяем, есть ли активный профиль НКО
     with get_db() as db:
-        nko_profile = db.query(NKOProfile).filter(NKOProfile.user_id == user.id).first()
+        # Проверяем активный профиль через связь User
+        db_user = db.query(User).filter(User.id == user.id).first()
+        if db_user and db_user.active_profile_id:
+            nko_profile = db.query(NKOProfile).filter(NKOProfile.id == db_user.active_profile_id).first()
+        else:
+            # Если нет активного профиля, берем первый завершенный
+            nko_profile = db.query(NKOProfile).filter(
+                NKOProfile.user_id == user.id,
+                NKOProfile.is_complete == True
+            ).first()
         has_profile = nko_profile is not None and nko_profile.is_complete
+    
+    # Получаем статистику пользователя
+    stats = get_user_statistics(user.id)
     
     # Формируем имя для приветствия
     user_name = user.first_name or user.username or "друг"
@@ -57,6 +349,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • 📅 Создавать контент-планы на заданный период
 
 📌 **Главное меню:**"""
+    
+    # Добавляем статистику, если есть активность
+    if stats["total_content"] > 0:
+        welcome_text += f"\n\n📊 *Твоя статистика:*"
+        welcome_text += f"\n• Постов создано: {stats['texts_count']}"
+        welcome_text += f"\n• Изображений создано: {stats['images_count']}"
+        
+        # Мотивационное сообщение
+        if stats["texts_count"] >= 10:
+            welcome_text += "\n\n🎉 Отличная работа! Ты уже создал 10+ постов!"
+        elif stats["texts_count"] >= 5:
+            welcome_text += "\n\n💪 Продолжай в том же духе! Ты уже на пути к успеху!"
     
     if not has_profile:
         welcome_text += "\n\n💡 *Совет:* Создай профиль своей НКО, чтобы я мог генерировать более релевантный контент! Нажми кнопку ниже 👇"
@@ -80,7 +384,174 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
     
+    # Предлагаем быстрый старт и примеры для новых пользователей
+    if stats["total_content"] == 0:
+        await update.message.reply_text(
+            "🚀 *Новичок?* Начни с быстрого старта или посмотри примеры!",
+            reply_markup=get_quick_start_keyboard(include_demos=True),
+            parse_mode="Markdown"
+        )
+    
     logger.info(f"Пользователь {user.id} ({user.username or user.first_name}) запустил бота")
+    
+    # Сохраняем флаг, что пользователь только что запустил бота
+    # Это нужно для обработки голосовых сообщений после /start
+    context.user_data['_started_recently'] = True
+
+
+async def handle_voice_after_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Обработка голосовых сообщений после /start
+    
+    Распознает голосовое сообщение, определяет намерение и переходит к соответствующей функции
+    """
+    if not update.message.voice:
+        return None
+    
+    # Проверяем, был ли недавно отправлен /start
+    if not context.user_data.get('_started_recently'):
+        return None
+    
+    # Проверяем, нет ли активной беседы (ConversationHandler)
+    # Если есть активная беседа, пропускаем обработку, чтобы ConversationHandler мог обработать голосовое
+    if context.user_data.get('_conversation_active'):
+        logger.info("ConversationHandler активен, пропускаем обработку голосового после /start")
+        return None
+    
+    user = update.effective_user
+    logger.info(f"Получено голосовое сообщение после /start от пользователя {user.id}")
+    
+    # Показываем индикатор обработки
+    processing_msg = await update.message.reply_text(
+        "🎤 Распознаю голосовое сообщение...\n\n"
+        "Это может занять несколько секунд."
+    )
+    
+    try:
+        # Распознаем речь
+        transcribed_text = await speech_recognition_service.transcribe_voice_message(
+            voice_file_id=update.message.voice.file_id,
+            bot=context.bot
+        )
+        
+        if not transcribed_text or len(transcribed_text.strip()) < 3:
+            await processing_msg.edit_text(
+                "❌ Не удалось распознать голосовое сообщение.\n\n"
+                "Попробуй еще раз или используй кнопки меню."
+            )
+            context.user_data.pop('_started_recently', None)
+            return None
+        
+        transcribed_text = transcribed_text.strip()
+        
+        # Показываем транскрипцию
+        await processing_msg.edit_text(
+            f"✅ Распознано: *{transcribed_text}*\n\n"
+            "Определяю намерение...",
+            parse_mode="Markdown"
+        )
+        
+        # Определяем намерение
+        intent_result = await speech_recognition_service.detect_intent(transcribed_text)
+        intent = intent_result.get('intent', 'other')
+        
+        logger.info(f"Определено намерение: {intent}")
+        
+        # Убираем флаг
+        context.user_data.pop('_started_recently', None)
+        
+        # Переходим к соответствующей функции
+        if intent == "text_generation":
+            await processing_msg.edit_text(
+                f"✅ Понял! Ты хочешь создать текст.\n\n"
+                f"Распознано: *{transcribed_text}*\n\n"
+                "Перехожу к генерации текста...",
+                parse_mode="Markdown"
+            )
+            
+            # Импортируем обработчик генерации текста
+            from bot.handlers.text_generation import show_text_generation_menu
+            
+            # Сохраняем распознанный текст для использования
+            context.user_data['free_text'] = transcribed_text
+            context.user_data['text_gen_mode'] = 'free'
+            context.user_data['_conversation_active'] = True
+            
+            # Показываем меню генерации текста
+            await update.message.reply_text(
+                "📝 **Генерация текста**\n\n"
+                f"Твоя идея: *{transcribed_text}*\n\n"
+                "Выбери способ генерации:",
+                reply_markup=None,
+                parse_mode="Markdown"
+            )
+            
+            # Автоматически выбираем свободный текст
+            from bot.handlers.text_generation import text_generation_type_callback
+            from telegram import CallbackQuery
+            
+            # Создаем фиктивный callback query
+            fake_query = type('obj', (object,), {
+                'data': 'text_gen_free',
+                'answer': lambda: None,
+                'edit_message_text': lambda text, **kwargs: update.message.reply_text(text, **kwargs)
+            })()
+            
+            fake_update = type('obj', (object,), {
+                'callback_query': fake_query,
+                'effective_user': update.effective_user
+            })()
+            
+            return await text_generation_type_callback(fake_update, context)
+            
+        elif intent == "image_generation":
+            await processing_msg.edit_text(
+                f"✅ Понял! Ты хочешь создать изображение.\n\n"
+                f"Распознано: *{transcribed_text}*\n\n"
+                "Перехожу к генерации изображения...",
+                parse_mode="Markdown"
+            )
+            
+            # Импортируем обработчик генерации изображений
+            from bot.handlers.image_generation import show_image_generation_menu
+            
+            # Сохраняем описание
+            context.user_data['image_gen'] = {'description': transcribed_text}
+            context.user_data['_conversation_active'] = True
+            
+            # Показываем меню и сразу обрабатываем описание
+            await update.message.reply_text(
+                f"🎨 **Генерация изображения**\n\n"
+                f"Описание: *{transcribed_text}*\n\n"
+                "Генерирую изображение...",
+                parse_mode="Markdown"
+            )
+            
+            # Вызываем обработчик описания напрямую
+            from bot.handlers.image_generation import handle_image_description
+            return await handle_image_description(update, context)
+            
+        else:
+            await processing_msg.edit_text(
+                f"✅ Распознано: *{transcribed_text}*\n\n"
+                "Не совсем понял, что ты хочешь сделать.\n\n"
+                "Используй кнопки меню или скажи:\n"
+                "• \"хочу создать текст\" или \"сгенерируй текст\"\n"
+                "• \"хочу создать изображение\" или \"сгенерируй изображение\"",
+                parse_mode="Markdown",
+                reply_markup=get_main_menu_keyboard()
+            )
+            return None
+            
+    except Exception as e:
+        logger.exception(f"Ошибка при обработке голосового после /start: {e}")
+        await processing_msg.edit_text(
+            "❌ Ошибка при обработке голосового сообщения.\n\n"
+            "Попробуй использовать кнопки меню.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        context.user_data.pop('_started_recently', None)
+        return None
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

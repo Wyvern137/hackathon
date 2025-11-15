@@ -55,15 +55,25 @@ class User(Base):
     last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     language_code: Mapped[str] = mapped_column(String(10), default="ru")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    active_profile_id: Mapped[Optional[int]] = mapped_column(
+        Integer, 
+        ForeignKey("nko_profiles.id", ondelete="SET NULL"), 
+        nullable=True
+    )  # Активный профиль НКО
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     
     # Связи
-    nko_profile: Mapped[Optional["NKOProfile"]] = relationship(
+    nko_profiles: Mapped[list["NKOProfile"]] = relationship(
         "NKOProfile", 
         back_populates="user", 
-        uselist=False,
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+        foreign_keys="[NKOProfile.user_id]"
+    )
+    active_profile: Mapped[Optional["NKOProfile"]] = relationship(
+        "NKOProfile",
+        foreign_keys=[active_profile_id],
+        post_update=True
     )
     content_history: Mapped[list["ContentHistory"]] = relationship(
         "ContentHistory",
@@ -96,8 +106,9 @@ class NKOProfile(Base):
     __tablename__ = "nko_profiles"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     
+    profile_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Название профиля для различения нескольких профилей
     organization_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     activity_types: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Список ActivityType
@@ -105,16 +116,18 @@ class NKOProfile(Base):
     tone_of_voice: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # ToneOfVoice
     contact_info: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Контакты
     brand_colors: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Цвета бренда для генерации изображений
+    logo_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # Путь к файлу логотипа
     
     is_complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # Активен ли профиль
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
     
     # Связи
-    user: Mapped["User"] = relationship("User", back_populates="nko_profile")
+    user: Mapped["User"] = relationship("User", back_populates="nko_profiles", foreign_keys=[user_id])
     
     def __repr__(self) -> str:
-        return f"<NKOProfile(id={self.id}, user_id={self.user_id}, org_name={self.organization_name})>"
+        return f"<NKOProfile(id={self.id}, user_id={self.user_id}, org_name={self.organization_name}, profile_name={self.profile_name})>"
 
 
 class ContentHistory(Base):
@@ -129,6 +142,7 @@ class ContentHistory(Base):
     extra_data: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)  # Дополнительные данные
     
     is_saved: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)  # Избранное
     tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Теги для поиска
     
     generated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

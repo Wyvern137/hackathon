@@ -63,6 +63,7 @@ CANCEL = "cancel"
 
 # Числовые константы для использования в ConversationHandler
 NKO_SETUP = {
+    "template_selection": 0,
     "org_name": 1,
     "description": 2,
     "activity_types": 3,

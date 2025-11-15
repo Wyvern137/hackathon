@@ -112,6 +112,90 @@ class StyleChecker:
             }
 
 
+    async def analyze_text_style(self, text: str) -> Dict[str, Any]:
+        """
+        Анализирует текст и автоматически определяет стиль изложения
+        
+        Args:
+            text: Текст для анализа
+        
+        Returns:
+            Dict с определенным стилем и его характеристиками
+        """
+        try:
+            prompt = f"""Проанализируй следующий текст поста и определи его стиль изложения.
+
+Текст:
+{text[:1000]}
+
+Определи:
+1. Стиль изложения (разговорный, официально-деловой, художественный, нейтральный, дружелюбный)
+2. Тональность (позитивный, нейтральный, серьезный)
+3. Уровень формальности (высокий, средний, низкий)
+4. Эмоциональную окраску
+5. Особенности стиля (использование эмодзи, длина предложений, обращения к читателю)
+
+Ответь в формате JSON:
+{{
+    "tone_of_voice": "conversational|formal|artistic|neutral|friendly",
+    "tonality": "positive|neutral|serious",
+    "formality_level": "high|medium|low",
+    "emotional_tone": "описание эмоциональной окраски",
+    "style_features": {{
+        "uses_emoji": true/false,
+        "sentence_length": "short|medium|long",
+        "addresses_reader": true/false,
+        "description": "описание особенностей стиля"
+    }}
+}}"""
+            
+            system_prompt = "Ты эксперт по стилистическому анализу текстов для социальных сетей."
+            
+            result = await openrouter_api.generate_text(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                temperature=0.3,
+                max_tokens=300
+            )
+            
+            if result and result.get("success"):
+                content = result.get("content", "")
+                
+                try:
+                    # Ищем JSON в ответе
+                    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                    if json_match:
+                        analysis = json.loads(json_match.group())
+                        return analysis
+                except json.JSONDecodeError:
+                    pass
+            
+            # Если не удалось распарсить JSON, возвращаем базовый результат
+            return {
+                "tone_of_voice": "neutral",
+                "tonality": "neutral",
+                "formality_level": "medium",
+                "emotional_tone": "Не удалось определить автоматически",
+                "style_features": {
+                    "uses_emoji": False,
+                    "sentence_length": "medium",
+                    "addresses_reader": False,
+                    "description": "Требуется ручной анализ"
+                }
+            }
+        
+        except Exception as e:
+            logger.error(f"Ошибка при анализе стиля текста: {e}")
+            return {
+                "tone_of_voice": "neutral",
+                "tonality": "neutral",
+                "formality_level": "medium",
+                "emotional_tone": "Ошибка при анализе",
+                "style_features": {},
+                "error": str(e)
+            }
+
+
 # Глобальный экземпляр проверщика
 style_checker = StyleChecker()
 
