@@ -953,7 +953,7 @@ def setup_text_generation_handlers(application):
     # так как это будет конфликтовать с ConversationHandler!
     # ConversationHandler сам обработает callback через entry_points
     
-    # Conversation handler для свободного текста
+    # Обработчик диалога для свободного текста
     # Важно: ConversationHandler отслеживает состояние автоматически через context.user_data
     # После callback query состояние устанавливается, и следующий Message должен обработаться
     free_text_handler = ConversationHandler(
@@ -984,7 +984,7 @@ def setup_text_generation_handlers(application):
     
     application.add_handler(free_text_handler)
     
-    # Conversation handler для примеров
+    # Обработчик диалога для примеров
     examples_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(text_generation_type_callback, pattern="^text_gen_examples$"),
@@ -1009,7 +1009,7 @@ def setup_text_generation_handlers(application):
     
     application.add_handler(examples_handler)
     
-    # Conversation handler для структурированной формы
+    # Обработчик диалога для структурированной формы
     structured_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(text_generation_type_callback, pattern="^text_gen_structured$"),

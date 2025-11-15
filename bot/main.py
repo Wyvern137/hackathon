@@ -141,6 +141,10 @@ async def run_bot():
         # Настройка обработчиков
         setup_handlers(application)
         
+        # Интеграция bot экземпляра с планировщиком для отправки напоминаний
+        from bot.services.scheduler import set_bot_instance
+        set_bot_instance(application.bot)
+        
         # Запуск планировщика для напоминаний
         start_scheduler()
         logger.info("Планировщик запущен")

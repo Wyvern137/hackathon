@@ -1,4 +1,4 @@
-"""Database models and utilities"""
+"""Модели базы данных и утилиты"""
 from .database import get_db, init_db
 from .models import (
     User,

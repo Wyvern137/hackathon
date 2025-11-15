@@ -1,3 +1,3 @@
-"""Services for AI, content processing, and scheduling"""
+"""Сервисы для AI, обработки контента и планирования"""
 
 
